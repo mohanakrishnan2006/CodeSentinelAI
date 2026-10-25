@@ -64,7 +64,7 @@ public class User {
     private String passwordHash;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "role", nullable = false, length = 20)
+    @Column(name = "role", nullable = false, columnDefinition = "VARCHAR(20)")
     @Builder.Default
     private Role role = Role.USER;
 
