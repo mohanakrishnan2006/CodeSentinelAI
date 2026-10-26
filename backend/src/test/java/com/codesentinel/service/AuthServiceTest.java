@@ -13,6 +13,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.Instant;
@@ -23,21 +25,32 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+/**
+ * Unit tests for {@link AuthService} using Mockito — no Spring context or database.
+ */
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
 
-    @Mock
-    private UserRepository userRepository;
-
-    @Mock
-    private PasswordEncoder passwordEncoder;
+    @Mock private UserRepository        userRepository;
+    @Mock private PasswordEncoder       passwordEncoder;
+    @Mock private AuthenticationManager authenticationManager;
+    @Mock private JwtService            jwtService;
+    @Mock private UserDetailsService    userDetailsService;
 
     private AuthService authService;
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(userRepository, passwordEncoder);
+        authService = new AuthService(
+                userRepository,
+                passwordEncoder,
+                authenticationManager,
+                jwtService,
+                userDetailsService
+        );
     }
+
+    // ── register() tests ──────────────────────────────────────────────────────
 
     @Test
     @DisplayName("Successfully register a user, hash password, and assign USER role")
