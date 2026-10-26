@@ -54,7 +54,7 @@ class PostgresConnectionTest {
             assertEquals("codesentinel_db", catalog, "Connected database catalog must be codesentinel_db");
 
             try (Statement statement = connection.createStatement();
-                 ResultSet rs = statement.executeQuery("SELECT 1 AS ping, current_database(), current_user")) {
+                    ResultSet rs = statement.executeQuery("SELECT 1 AS ping, current_database(), current_user")) {
                 assertTrue(rs.next(), "Query should return at least one row");
                 assertEquals(1, rs.getInt("ping"), "Ping query should return 1");
                 assertEquals("codesentinel_db", rs.getString("current_database"));
