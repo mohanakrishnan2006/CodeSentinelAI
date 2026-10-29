@@ -8,6 +8,7 @@ import com.codesentinel.model.ProjectUpload;
 import com.codesentinel.model.User;
 import com.codesentinel.repository.ProjectRepository;
 import com.codesentinel.repository.ProjectUploadRepository;
+import com.codesentinel.repository.ScanRunRepository;
 import com.codesentinel.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -29,6 +30,7 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final ProjectUploadRepository uploadRepository;
+    private final ScanRunRepository scanRunRepository;
     private final UserRepository userRepository;
     private final UploadStorageService uploadStorageService;
 
@@ -73,6 +75,9 @@ public class ProjectService {
         Project project = findOwnedProject(projectId, owner.getId());
         List<ProjectUpload> uploads = uploadRepository.findAllForOwnedProject(projectId, owner.getId());
         List<UUID> uploadIds = uploads.stream().map(ProjectUpload::getId).toList();
+        if (!uploadIds.isEmpty()) {
+            scanRunRepository.deleteAllForUploads(uploadIds);
+        }
         uploadRepository.deleteAll(uploads);
         projectRepository.delete(project);
         cleanupUploadsAfterCommit(uploadIds);

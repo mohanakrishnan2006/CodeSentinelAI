@@ -103,6 +103,8 @@
 
 ## 3. Database Entity Relationship (ER) Design
 
+The ER diagram below is the intended broader product model. In the current backend, uploaded snapshots are represented by `project_uploads`; the implemented scan foundation adds `scan_runs` with a required `upload_id` foreign key. Findings and scanner output are not persisted yet.
+
 ```
 +----------------------------------+
 |              users               |
@@ -221,8 +223,14 @@
 - `POST /{projectId}/versions/{versionId}/rollback`: Set active working tree to chosen version.
 
 ### 4.3 Scans & Security Reports (`/api/v1/scans`)
-- `POST /projects/{projectId}/versions/{versionId}/trigger`: Run Gitleaks + Semgrep scans asynchronously.
-- `GET /projects/{projectId}/versions/{versionId}/report`: Retrieve scan report with calculated security score.
+- **Implemented scan-management foundation** (all endpoints require authentication and enforce project ownership):
+  - `POST /projects/{projectId}/uploads/{uploadId}/scans`: Create a `QUEUED` scan request and return `202 Accepted`.
+  - `GET /projects/{projectId}/uploads/{uploadId}/scans`: List scan requests for that owned upload.
+  - `GET /scans/{scanId}`: Retrieve an owned scan request.
+  - Scan records refer to one specific completed `ProjectUpload` snapshot. Responses contain IDs, status, timestamps, and summary counters only.
+- **Planned, not yet implemented**:
+  - `POST /projects/{projectId}/versions/{versionId}/trigger`: Run Gitleaks + Semgrep scans asynchronously.
+  - `GET /projects/{projectId}/versions/{versionId}/report`: Retrieve scan report with calculated security score.
 - `GET /reports/{reportId}/vulnerabilities`: List detected vulnerabilities (with severity filter).
 - `GET /reports/{reportId}/secrets`: List detected secrets (masked values).
 

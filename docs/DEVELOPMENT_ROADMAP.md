@@ -11,7 +11,7 @@ This document establishes the step-by-step implementation plan for CodeSentinel 
 | **Phase 0** | **Architecture & Blueprint** | System architecture, ER diagrams, API specs, environment setup. | Workspace initialized, docs approved. |
 | **Phase 1** | **Backend Foundation & Auth** | Spring Boot 3, PostgreSQL, Spring Security, JWT, User entity. | User registration/login tests passing, JWT validated. |
 | **Phase 2** | **Project & Secure Ingestion** | Projects, Versions, ZIP file upload, `Zip Slip` prevention. | Upload sample ZIP, verify safe extraction and DB records. |
-| **Phase 3** | **Static Security Scanners** | Gitleaks, Semgrep, secret masking, vulnerability normalization. | Scan sample repo, verify masked secrets and persisted findings. |
+| **Phase 3** | **Static Security Scanners** | Scan-management foundation implemented; Gitleaks, Semgrep, secret masking, and finding normalization remain. | Scan requests are owner-scoped and linked to uploads; later verify masked findings from real scans. |
 | **Phase 4** | **AI Microservice & Ollama** | Python 3.12 FastAPI, Ollama `qwen2.5-coder:3b`, JSON schema. | Explanations and root cause generated via local LLM. |
 | **Phase 5** | **RAG & Code Fixes** | LangChain, ChromaDB, code chunking, unified diffs, patch applier. | Context-aware patch generated and applied, creating `v2`. |
 | **Phase 6** | **Frontend SPA** | React, Tailwind CSS, Monaco/Diff viewer, Scan Dashboard. | User can log in, upload code, view scan findings and diffs in UI. |
@@ -64,8 +64,13 @@ This document establishes the step-by-step implementation plan for CodeSentinel 
 ---
 
 ### Phase 3: Static Security Scanners Pipeline
-- **Objective**: Orchestrate Gitleaks and Semgrep static analysis on project files, redact discovered secrets, and persist structured findings.
-- **Key Deliverables**:
+- **Objective**: Manage scan requests against specific uploaded snapshots, then integrate isolated Gitleaks and Semgrep analysis, redact discovered secrets, and persist structured findings.
+- **Implemented foundation**:
+  - `ScanRun` records reference a completed `ProjectUpload` and begin in `QUEUED` status.
+  - Authenticated, owner-scoped endpoints create scan requests, list an upload's scan history, and retrieve scan details.
+  - Safe response metadata includes lifecycle timestamps and zero-initialized summary counters; raw scanner output and secrets are not stored.
+  - Project deletion removes scan rows before upload metadata while retaining the existing post-commit uploaded-file cleanup.
+- **Remaining scanner work**:
   - Database entities: `ScanReport`, `Vulnerability`, and `SecretFinding`.
   - Scanner service executing Gitleaks CLI with JSON output formatting.
   - Secret sanitizer utility: masks detected secrets (`[REDACTED_SECRET_<HASH>]`) before persistence and indexing.
@@ -73,6 +78,7 @@ This document establishes the step-by-step implementation plan for CodeSentinel 
   - Security score calculation algorithm (0–100 scale based on severity weights: Critical -25, High -15, Medium -5, Low -1).
   - Scan endpoints: trigger scan and retrieve findings.
 - **Verification Milestone**:
+  - Verify owner-scoped scan request lifecycle and upload linkage (implemented and covered by backend tests).
   - Scan a mock project containing intentional hardcoded API keys and an SQL injection flaw.
   - Confirm Gitleaks detects the secret, the secret is masked in the database, and Semgrep flags the SQL injection.
 

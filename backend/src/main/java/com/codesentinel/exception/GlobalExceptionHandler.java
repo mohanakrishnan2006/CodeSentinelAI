@@ -60,6 +60,20 @@ public class GlobalExceptionHandler {
         return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(ScanNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleScanNotFound(
+            ScanNotFoundException ex,
+            HttpServletRequest request) {
+        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(UploadNotReadyException.class)
+    public ResponseEntity<ErrorResponse> handleUploadNotReady(
+            UploadNotReadyException ex,
+            HttpServletRequest request) {
+        return errorResponse(HttpStatus.CONFLICT, "The upload is not ready to be scanned", request);
+    }
+
     @ExceptionHandler(UploadStorageException.class)
     public ResponseEntity<ErrorResponse> handleUploadStorageFailure(
             UploadStorageException ex,
