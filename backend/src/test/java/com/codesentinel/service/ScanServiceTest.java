@@ -66,7 +66,7 @@ class ScanServiceTest {
                 .originalFilename("source.zip").fileCount(1).extractedSizeBytes(1).build();
 
         when(userRepository.findByEmail(OWNER_EMAIL)).thenReturn(Optional.of(owner));
-        lenient().when(projectRepository.findByIdAndOwnerId(project.getId(), owner.getId()))
+        lenient().when(projectRepository.findByIdAndOwnerIdForUpdate(project.getId(), owner.getId()))
                 .thenReturn(Optional.of(project));
         lenient().when(uploadRepository.findOneForOwnedProject(upload.getId(), project.getId(), owner.getId()))
                 .thenReturn(Optional.of(upload));
@@ -112,7 +112,7 @@ class ScanServiceTest {
     @Test
     @DisplayName("A project outside the authenticated user's ownership is not found")
     void rejectsAnotherUsersProject() {
-        when(projectRepository.findByIdAndOwnerId(project.getId(), owner.getId()))
+        when(projectRepository.findByIdAndOwnerIdForUpdate(project.getId(), owner.getId()))
                 .thenReturn(Optional.empty());
 
         assertThrows(ProjectNotFoundException.class,

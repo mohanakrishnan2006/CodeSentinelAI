@@ -57,6 +57,9 @@ public class ScanRun {
     @Column(name = "started_at")
     private Instant startedAt;
 
+    @Column(name = "lease_expires_at")
+    private Instant leaseExpiresAt;
+
     @Column(name = "completed_at")
     private Instant completedAt;
 

@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.LinkOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
 import java.text.Normalizer;
@@ -110,6 +111,34 @@ public class UploadStorageService {
             deleteTree(uploadDirectory);
         } catch (IOException ex) {
             throw new UploadStorageException("Unable to clean up upload storage", ex);
+        }
+    }
+
+    public Path resolveUploadDirectory(UUID uploadId, String storageReference) {
+        if (uploadId == null || storageReference == null
+                || !uploadId.toString().equals(storageReference)) {
+            throw new UploadStorageException("Upload storage is unavailable", null);
+        }
+
+        Path configuredRoot = properties.getStorageDirectory().toAbsolutePath().normalize();
+        try {
+            if (Files.isSymbolicLink(configuredRoot) || !Files.isDirectory(configuredRoot)) {
+                throw new IOException("Configured storage directory is not a safe directory");
+            }
+            Path storageRoot = configuredRoot.toRealPath();
+            Path uploadDirectory = storageRoot.resolve(storageReference).normalize();
+            if (!uploadDirectory.startsWith(storageRoot) || uploadDirectory.equals(storageRoot)
+                    || Files.isSymbolicLink(uploadDirectory)
+                    || !Files.isDirectory(uploadDirectory, LinkOption.NOFOLLOW_LINKS)) {
+                throw new IOException("Upload directory is not a safe directory");
+            }
+            Path realUploadDirectory = uploadDirectory.toRealPath();
+            if (!realUploadDirectory.startsWith(storageRoot)) {
+                throw new IOException("Upload directory is outside configured storage");
+            }
+            return realUploadDirectory;
+        } catch (IOException ex) {
+            throw new UploadStorageException("Unable to resolve uploaded source storage", ex);
         }
     }
 

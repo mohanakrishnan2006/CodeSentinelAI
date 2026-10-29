@@ -69,7 +69,8 @@ This document establishes the step-by-step implementation plan for CodeSentinel 
   - `ScanRun` records reference a completed `ProjectUpload` and begin in `QUEUED` status.
   - Authenticated, owner-scoped endpoints create scan requests, list an upload's scan history, and retrieve scan details.
   - Safe response metadata includes lifecycle timestamps and zero-initialized summary counters; raw scanner output and secrets are not stored.
-  - Project deletion removes scan rows before upload metadata while retaining the existing post-commit uploaded-file cleanup.
+  - An opt-in host-side worker polls PostgreSQL, claims queued work atomically, validates upload storage references, and recovers expired leases as failed.
+  - The placeholder executor does not inspect or execute source code. Project deletion cancels queued scans and returns 409 while a scan is running; existing post-commit uploaded-file cleanup is preserved.
 - **Remaining scanner work**:
   - Database entities: `ScanReport`, `Vulnerability`, and `SecretFinding`.
   - Scanner service executing Gitleaks CLI with JSON output formatting.

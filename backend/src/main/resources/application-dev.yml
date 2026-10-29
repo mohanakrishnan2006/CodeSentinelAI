@@ -33,3 +33,7 @@ codesentinel:
     max-files: 1000
     max-total-size-bytes: 262144000
     max-file-size-bytes: 52428800
+  scan-worker:
+    enabled: false
+    poll-interval-ms: 1000
+    lease-timeout-ms: 300000

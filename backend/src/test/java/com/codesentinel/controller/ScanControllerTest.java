@@ -11,6 +11,7 @@ import com.codesentinel.repository.ProjectRepository;
 import com.codesentinel.repository.ProjectUploadRepository;
 import com.codesentinel.repository.ScanRunRepository;
 import com.codesentinel.repository.UserRepository;
+import com.codesentinel.service.ScanRunCoordinator;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -58,8 +60,10 @@ class ScanControllerTest {
     private ProjectRepository projectRepository;
     @Autowired
     private ProjectUploadRepository uploadRepository;
-    @Autowired
+    @SpyBean
     private ScanRunRepository scanRunRepository;
+    @Autowired
+    private ScanRunCoordinator scanRunCoordinator;
 
     private UUID ownerProjectId;
     private UUID ownerUploadId;
@@ -182,6 +186,53 @@ class ScanControllerTest {
         assertThat(scanRunRepository.findById(scan.getId())).isEmpty();
         assertThat(uploadRepository.findById(upload.getId())).isEmpty();
         assertThat(Files.exists(uploadDirectory)).isFalse();
+    }
+
+    @Test
+    @WithMockUser(username = OWNER_EMAIL)
+    @DisplayName("Deleting a project cancels queued scans before removing scan and upload metadata")
+    void deletingProjectWithQueuedScanCleansUp() throws Exception {
+        ProjectUpload upload = saveOwnedUpload();
+        ScanRun scan = saveScan(upload);
+
+        mockMvc.perform(delete("/api/v1/projects/" + ownerProjectId))
+                .andExpect(status().isNoContent());
+
+        assertThat(scanRunRepository.findById(scan.getId())).isEmpty();
+        assertThat(uploadRepository.findById(upload.getId())).isEmpty();
+        assertThat(projectRepository.findById(ownerProjectId)).isEmpty();
+        assertThat(scanRunCoordinator.claimNext(60_000)).isEmpty();
+        org.mockito.InOrder deletionOrder = org.mockito.Mockito.inOrder(scanRunRepository);
+        deletionOrder.verify(scanRunRepository).cancelQueuedForProject(
+                org.mockito.ArgumentMatchers.eq(ownerProjectId),
+                org.mockito.ArgumentMatchers.eq(ScanStatus.QUEUED),
+                org.mockito.ArgumentMatchers.eq(ScanStatus.CANCELLED),
+                org.mockito.ArgumentMatchers.any(java.time.Instant.class));
+        deletionOrder.verify(scanRunRepository).deleteAllForUploads(
+                org.mockito.ArgumentMatchers.anyList());
+    }
+
+    @Test
+    @WithMockUser(username = OWNER_EMAIL)
+    @DisplayName("Deleting a project with a running scan returns 409 and preserves its data")
+    void rejectsDeletingProjectWithRunningScan() throws Exception {
+        ProjectUpload upload = saveOwnedUpload();
+        ScanRun scan = scanRunRepository.save(ScanRun.builder()
+                .projectUpload(upload)
+                .status(ScanStatus.RUNNING)
+                .startedAt(java.time.Instant.now())
+                .leaseExpiresAt(java.time.Instant.now().plusSeconds(60))
+                .build());
+
+        mockMvc.perform(delete("/api/v1/projects/" + ownerProjectId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message",
+                        is("The project cannot be deleted while a scan is running")));
+
+        assertThat(projectRepository.findById(ownerProjectId)).isPresent();
+        assertThat(uploadRepository.findById(upload.getId())).isPresent();
+        assertThat(scanRunRepository.findById(scan.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScanStatus.RUNNING);
     }
 
     private String scanCollectionUrl(UUID projectId, UUID uploadId) {

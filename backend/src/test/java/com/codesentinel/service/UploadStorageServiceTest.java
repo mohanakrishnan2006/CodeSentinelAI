@@ -58,6 +58,35 @@ class UploadStorageServiceTest {
     }
 
     @Test
+    @DisplayName("Resolves only an existing upload directory under the configured root")
+    void resolvesValidUploadDirectory() throws Exception {
+        UUID uploadId = UUID.randomUUID();
+        Path uploadDirectory = temporaryDirectory.resolve("uploads").resolve(uploadId.toString());
+        Files.createDirectories(uploadDirectory);
+
+        assertThat(storageService.resolveUploadDirectory(uploadId, uploadId.toString()))
+                .isEqualTo(uploadDirectory.toRealPath());
+    }
+
+    @Test
+    @DisplayName("Rejects storage references that could escape the configured root")
+    void rejectsStoragePathTraversal() {
+        UUID uploadId = UUID.randomUUID();
+
+        assertThrows(UploadStorageException.class,
+                () -> storageService.resolveUploadDirectory(uploadId, "..\\outside"));
+    }
+
+    @Test
+    @DisplayName("Rejects missing upload directories")
+    void rejectsMissingUploadDirectory() {
+        UUID uploadId = UUID.randomUUID();
+
+        assertThrows(UploadStorageException.class,
+                () -> storageService.resolveUploadDirectory(uploadId, uploadId.toString()));
+    }
+
+    @Test
     @DisplayName("Rejects invalid archive bytes")
     void rejectsInvalidArchive() {
         MockMultipartFile multipartFile = new MockMultipartFile(

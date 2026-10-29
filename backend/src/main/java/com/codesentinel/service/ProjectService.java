@@ -3,8 +3,10 @@ package com.codesentinel.service;
 import com.codesentinel.dto.ProjectRequest;
 import com.codesentinel.dto.ProjectResponse;
 import com.codesentinel.exception.ProjectNotFoundException;
+import com.codesentinel.exception.ScanInProgressException;
 import com.codesentinel.model.Project;
 import com.codesentinel.model.ProjectUpload;
+import com.codesentinel.model.ScanStatus;
 import com.codesentinel.model.User;
 import com.codesentinel.repository.ProjectRepository;
 import com.codesentinel.repository.ProjectUploadRepository;
@@ -19,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -72,7 +75,13 @@ public class ProjectService {
     @Transactional
     public void delete(UUID projectId, String authenticatedEmail) {
         User owner = findUserByEmail(authenticatedEmail);
-        Project project = findOwnedProject(projectId, owner.getId());
+        Project project = projectRepository.findByIdAndOwnerIdForUpdate(projectId, owner.getId())
+                .orElseThrow(() -> new ProjectNotFoundException(projectId));
+        if (scanRunRepository.countByProjectUpload_Project_IdAndStatus(projectId, ScanStatus.RUNNING) > 0) {
+            throw new ScanInProgressException(projectId);
+        }
+        scanRunRepository.cancelQueuedForProject(
+                projectId, ScanStatus.QUEUED, ScanStatus.CANCELLED, Instant.now());
         List<ProjectUpload> uploads = uploadRepository.findAllForOwnedProject(projectId, owner.getId());
         List<UUID> uploadIds = uploads.stream().map(ProjectUpload::getId).toList();
         if (!uploadIds.isEmpty()) {

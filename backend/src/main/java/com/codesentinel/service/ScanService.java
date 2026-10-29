@@ -74,7 +74,7 @@ public class ScanService {
     }
 
     private void verifyOwnedProject(UUID projectId, UUID ownerId) {
-        projectRepository.findByIdAndOwnerId(projectId, ownerId)
+        projectRepository.findByIdAndOwnerIdForUpdate(projectId, ownerId)
                 .orElseThrow(() -> new ProjectNotFoundException(projectId));
     }
 

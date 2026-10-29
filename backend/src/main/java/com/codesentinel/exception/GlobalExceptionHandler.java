@@ -74,6 +74,14 @@ public class GlobalExceptionHandler {
         return errorResponse(HttpStatus.CONFLICT, "The upload is not ready to be scanned", request);
     }
 
+    @ExceptionHandler(ScanInProgressException.class)
+    public ResponseEntity<ErrorResponse> handleScanInProgress(
+            ScanInProgressException ex,
+            HttpServletRequest request) {
+        return errorResponse(HttpStatus.CONFLICT,
+                "The project cannot be deleted while a scan is running", request);
+    }
+
     @ExceptionHandler(UploadStorageException.class)
     public ResponseEntity<ErrorResponse> handleUploadStorageFailure(
             UploadStorageException ex,

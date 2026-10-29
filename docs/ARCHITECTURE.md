@@ -228,6 +228,12 @@ The ER diagram below is the intended broader product model. In the current backe
   - `GET /projects/{projectId}/uploads/{uploadId}/scans`: List scan requests for that owned upload.
   - `GET /scans/{scanId}`: Retrieve an owned scan request.
   - Scan records refer to one specific completed `ProjectUpload` snapshot. Responses contain IDs, status, timestamps, and summary counters only.
+- **Worker foundation**:
+  - A separate host-side Java process can poll PostgreSQL when `codesentinel.scan-worker.enabled=true`; the API process leaves this disabled.
+  - The worker atomically claims queued scans under a project row lock, validates the completed upload and resolves its UUID storage reference under the configured upload root.
+  - A placeholder executor does not read or execute source files and marks the request complete. This is infrastructure only; it is not evidence that a scanner ran.
+  - Expired leases are marked `FAILED`. The worker and backend must use the same PostgreSQL database and upload-storage directory.
+  - To run locally from `backend/`, package with `mvn package`, then start the API with `java -jar target/codesentinel-backend-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev`. In another terminal, start the worker with `java -jar target/codesentinel-backend-0.0.1-SNAPSHOT.jar --codesentinel.worker-process=true --codesentinel.scan-worker.enabled=true --spring.profiles.active=dev`.
 - **Planned, not yet implemented**:
   - `POST /projects/{projectId}/versions/{versionId}/trigger`: Run Gitleaks + Semgrep scans asynchronously.
   - `GET /projects/{projectId}/versions/{versionId}/report`: Retrieve scan report with calculated security score.

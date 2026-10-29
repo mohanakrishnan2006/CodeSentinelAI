@@ -5,9 +5,11 @@ import com.codesentinel.dto.ProjectResponse;
 import com.codesentinel.exception.ProjectNotFoundException;
 import com.codesentinel.model.Project;
 import com.codesentinel.model.Role;
+import com.codesentinel.model.ScanStatus;
 import com.codesentinel.model.User;
 import com.codesentinel.repository.ProjectRepository;
 import com.codesentinel.repository.ProjectUploadRepository;
+import com.codesentinel.repository.ScanRunRepository;
 import com.codesentinel.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -40,6 +42,9 @@ class ProjectServiceTest {
 
     @Mock
     private ProjectUploadRepository uploadRepository;
+
+    @Mock
+    private ScanRunRepository scanRunRepository;
 
     @Mock
     private UploadStorageService uploadStorageService;
@@ -93,17 +98,32 @@ class ProjectServiceTest {
         UUID projectId = UUID.randomUUID();
         Project project = Project.builder().id(projectId).name("Old name").owner(owner).build();
         when(projectRepository.findByIdAndOwnerId(projectId, owner.getId())).thenReturn(Optional.of(project));
+        when(projectRepository.findByIdAndOwnerIdForUpdate(projectId, owner.getId()))
+                .thenReturn(Optional.of(project));
         when(projectRepository.saveAndFlush(project)).thenReturn(project);
         when(uploadRepository.findAllForOwnedProject(projectId, owner.getId())).thenReturn(List.of());
+        when(scanRunRepository.countByProjectUpload_Project_IdAndStatus(projectId, ScanStatus.RUNNING))
+                .thenReturn(0L);
+        when(scanRunRepository.cancelQueuedForProject(
+                org.mockito.ArgumentMatchers.eq(projectId),
+                org.mockito.ArgumentMatchers.eq(ScanStatus.QUEUED),
+                org.mockito.ArgumentMatchers.eq(ScanStatus.CANCELLED),
+                org.mockito.ArgumentMatchers.any())).thenReturn(0);
 
         assertThat(projectService.get(projectId, OWNER_EMAIL).getName()).isEqualTo("Old name");
         assertThat(projectService.update(projectId,
                 ProjectRequest.builder().name("New name").build(), OWNER_EMAIL).getName()).isEqualTo("New name");
         projectService.delete(projectId, OWNER_EMAIL);
 
-        verify(projectRepository, org.mockito.Mockito.times(3))
+        verify(projectRepository, org.mockito.Mockito.times(2))
                 .findByIdAndOwnerId(projectId, owner.getId());
+        verify(projectRepository).findByIdAndOwnerIdForUpdate(projectId, owner.getId());
         verify(projectRepository).delete(project);
+        verify(scanRunRepository).cancelQueuedForProject(
+                org.mockito.ArgumentMatchers.eq(projectId),
+                org.mockito.ArgumentMatchers.eq(ScanStatus.QUEUED),
+                org.mockito.ArgumentMatchers.eq(ScanStatus.CANCELLED),
+                org.mockito.ArgumentMatchers.any());
     }
 
     @Test
