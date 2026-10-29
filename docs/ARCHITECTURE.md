@@ -210,7 +210,10 @@
 - `POST /`: Create project metadata `{ name, description }`.
 - `GET /{projectId}`: Get project details.
 - `DELETE /{projectId}`: Delete project, its versions, and physical storage.
-- `POST /{projectId}/upload`: Multipart upload of project ZIP file. Safe extraction creates `v1`.
+- `POST /{projectId}/uploads`: Authenticated multipart upload with a `file` ZIP part. The service validates archive entries, extracts regular source files into a generated directory outside the application source tree, and records upload metadata.
+- `GET /{projectId}/uploads`: List upload history for the project owner.
+- `GET /{projectId}/uploads/{uploadId}`: Get upload metadata for the project owner.
+- ZIP uploads are limited to 50 MB compressed, 1,000 extracted files, 250 MB total extracted data, and 50 MB per file by default. The storage root and limits are configurable under `codesentinel.upload`; uploaded files are never executed or stored in PostgreSQL.
 - `POST /{projectId}/import-github`: Import public repository via GitHub URL.
 - `GET /{projectId}/versions`: List all versions of a project.
 - `GET /{projectId}/versions/{versionId}/files`: Get tree structure of project version files.

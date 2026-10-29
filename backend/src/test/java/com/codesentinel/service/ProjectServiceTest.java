@@ -7,6 +7,7 @@ import com.codesentinel.model.Project;
 import com.codesentinel.model.Role;
 import com.codesentinel.model.User;
 import com.codesentinel.repository.ProjectRepository;
+import com.codesentinel.repository.ProjectUploadRepository;
 import com.codesentinel.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -36,6 +37,12 @@ class ProjectServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private ProjectUploadRepository uploadRepository;
+
+    @Mock
+    private UploadStorageService uploadStorageService;
 
     @InjectMocks
     private ProjectService projectService;
@@ -87,6 +94,7 @@ class ProjectServiceTest {
         Project project = Project.builder().id(projectId).name("Old name").owner(owner).build();
         when(projectRepository.findByIdAndOwnerId(projectId, owner.getId())).thenReturn(Optional.of(project));
         when(projectRepository.saveAndFlush(project)).thenReturn(project);
+        when(uploadRepository.findAllForOwnedProject(projectId, owner.getId())).thenReturn(List.of());
 
         assertThat(projectService.get(projectId, OWNER_EMAIL).getName()).isEqualTo("Old name");
         assertThat(projectService.update(projectId,

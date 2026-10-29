@@ -2,6 +2,10 @@ server:
   port: 8080
 
 spring:
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 51MB
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/codesentinel_db}
     username: ${SPRING_DATASOURCE_USERNAME:codesentinel_user}
@@ -23,3 +27,9 @@ codesentinel:
   jwt:
     secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  upload:
+    storage-directory: ${CODESENTINEL_UPLOAD_STORAGE_DIRECTORY:${user.home}/.codesentinel/uploads}
+    max-archive-size-bytes: 52428800
+    max-files: 1000
+    max-total-size-bytes: 262144000
+    max-file-size-bytes: 52428800

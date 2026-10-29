@@ -4,13 +4,19 @@ import com.codesentinel.dto.ProjectRequest;
 import com.codesentinel.dto.ProjectResponse;
 import com.codesentinel.exception.ProjectNotFoundException;
 import com.codesentinel.model.Project;
+import com.codesentinel.model.ProjectUpload;
 import com.codesentinel.model.User;
 import com.codesentinel.repository.ProjectRepository;
+import com.codesentinel.repository.ProjectUploadRepository;
 import com.codesentinel.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.UUID;
@@ -19,8 +25,12 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ProjectService {
 
+    private static final Logger log = LoggerFactory.getLogger(ProjectService.class);
+
     private final ProjectRepository projectRepository;
+    private final ProjectUploadRepository uploadRepository;
     private final UserRepository userRepository;
+    private final UploadStorageService uploadStorageService;
 
     @Transactional
     public ProjectResponse create(ProjectRequest request, String authenticatedEmail) {
@@ -60,7 +70,35 @@ public class ProjectService {
     @Transactional
     public void delete(UUID projectId, String authenticatedEmail) {
         User owner = findUserByEmail(authenticatedEmail);
-        projectRepository.delete(findOwnedProject(projectId, owner.getId()));
+        Project project = findOwnedProject(projectId, owner.getId());
+        List<ProjectUpload> uploads = uploadRepository.findAllForOwnedProject(projectId, owner.getId());
+        List<UUID> uploadIds = uploads.stream().map(ProjectUpload::getId).toList();
+        uploadRepository.deleteAll(uploads);
+        projectRepository.delete(project);
+        cleanupUploadsAfterCommit(uploadIds);
+    }
+
+    private void cleanupUploadsAfterCommit(List<UUID> uploadIds) {
+        if (uploadIds.isEmpty()) {
+            return;
+        }
+        Runnable cleanup = () -> uploadIds.forEach(uploadId -> {
+            try {
+                uploadStorageService.deleteUploadDirectory(uploadId);
+            } catch (RuntimeException ex) {
+                log.error("Failed to remove stored files for upload {}", uploadId, ex);
+            }
+        });
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            cleanup.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                cleanup.run();
+            }
+        });
     }
 
     private User findUserByEmail(String email) {
