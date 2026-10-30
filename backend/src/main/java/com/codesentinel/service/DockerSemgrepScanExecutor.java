@@ -1,6 +1,8 @@
 package com.codesentinel.service;
 
 import com.codesentinel.config.ScanWorkerProperties;
+import com.codesentinel.model.ScannerFailureCode;
+import com.codesentinel.model.ScannerType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -27,9 +29,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @ConditionalOnProperty(
         name = "codesentinel.scan-worker.executor",
-        havingValue = "semgrep",
-        matchIfMissing = true)
-public class DockerSemgrepScanExecutor implements ScanExecutor {
+        havingValue = "composite")
+public class DockerSemgrepScanExecutor implements ScannerAdapter {
 
     private static final String RULESET_RESOURCE = "/semgrep/codesentinel.yml";
     private static final int CLEANUP_OUTPUT_LIMIT = 1024;
@@ -38,6 +39,11 @@ public class DockerSemgrepScanExecutor implements ScanExecutor {
     private final DockerCommandRunner commandRunner;
     private final ScanWorkerProperties properties;
     private final SemgrepJsonParser parser;
+
+    @Override
+    public ScannerType scannerType() {
+        return ScannerType.SEMGREP;
+    }
 
     @Override
     public ScanExecutionResult execute(ScanWorkItem workItem) {
@@ -217,13 +223,18 @@ public class DockerSemgrepScanExecutor implements ScanExecutor {
 
     private void requireSuccessful(DockerCommandRunner.ProcessResult result, String failureMessage) {
         if (result.timedOut()) {
-            throw new ScanExecutionException("Semgrep execution exceeded its configured deadline");
+            throw new ScanExecutionException(
+                    "Semgrep execution exceeded its configured deadline",
+                    ScannerFailureCode.TIMEOUT);
         }
         if (result.outputTruncated()) {
-            throw new ScanExecutionException("Semgrep output exceeded its configured limit");
+            throw new ScanExecutionException(
+                    "Semgrep output exceeded its configured limit",
+                    ScannerFailureCode.OUTPUT_LIMIT);
         }
         if (result.exitCode() != 0) {
-            throw new ScanExecutionException(failureMessage);
+            throw new ScanExecutionException(failureMessage,
+                    ScannerFailureCode.NON_ZERO_EXIT);
         }
     }
 
@@ -233,7 +244,8 @@ public class DockerSemgrepScanExecutor implements ScanExecutor {
                 Duration.ofMillis(properties.getDockerCommandTimeoutMs()),
                 CLEANUP_OUTPUT_LIMIT);
         if (cleanup.timedOut() || cleanup.outputTruncated() || cleanup.exitCode() != 0) {
-            throw new ScanExecutionException("Semgrep container cleanup failed");
+            throw new ScanExecutionException(
+                    "Semgrep container cleanup failed", ScannerFailureCode.CLEANUP_ERROR);
         }
     }
 

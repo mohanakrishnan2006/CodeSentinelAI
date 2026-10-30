@@ -70,7 +70,7 @@ public class ScanWorkerService {
             if (leaseLost.get()) {
                 throw new ScanExecutionException("Scan lease was lost before execution");
             }
-            ScanExecutionResult result =
+            ScanBatchResult result =
                     scanExecutor.execute(new ScanWorkItem(scan.scanId(), scan.uploadId(), sourceDirectory));
             heartbeatActive.set(false);
             heartbeat.cancel(false);

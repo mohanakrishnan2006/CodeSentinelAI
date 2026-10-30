@@ -1,6 +1,7 @@
 package com.codesentinel.service;
 
 import com.codesentinel.dto.ScanRunResponse;
+import com.codesentinel.dto.ScannerOutcomeResponse;
 import com.codesentinel.exception.ProjectNotFoundException;
 import com.codesentinel.exception.ScanNotFoundException;
 import com.codesentinel.exception.UploadNotFoundException;
@@ -12,6 +13,7 @@ import com.codesentinel.model.UploadStatus;
 import com.codesentinel.model.User;
 import com.codesentinel.repository.ProjectRepository;
 import com.codesentinel.repository.ProjectUploadRepository;
+import com.codesentinel.repository.ScanOutcomeRepository;
 import com.codesentinel.repository.ScanRunRepository;
 import com.codesentinel.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,7 @@ public class ScanService {
 
     private final ProjectRepository projectRepository;
     private final ProjectUploadRepository uploadRepository;
+    private final ScanOutcomeRepository scanOutcomeRepository;
     private final ScanRunRepository scanRunRepository;
     private final UserRepository userRepository;
 
@@ -45,7 +48,7 @@ public class ScanService {
                 .projectUpload(upload)
                 .status(ScanStatus.QUEUED)
                 .build();
-        return ScanRunResponse.fromEntity(scanRunRepository.saveAndFlush(scanRun));
+        return ScanRunResponse.fromEntity(scanRunRepository.saveAndFlush(scanRun), List.of());
     }
 
     @Transactional(readOnly = true)
@@ -55,7 +58,7 @@ public class ScanService {
         findOwnedUpload(projectId, uploadId, owner.getId());
         return scanRunRepository.findAllForOwnedUpload(uploadId, projectId, owner.getId())
                 .stream()
-                .map(ScanRunResponse::fromEntity)
+                .map(this::toResponse)
                 .toList();
     }
 
@@ -64,7 +67,16 @@ public class ScanService {
         User owner = findUser(authenticatedEmail);
         ScanRun scanRun = scanRunRepository.findOneForOwner(scanId, owner.getId())
                 .orElseThrow(() -> new ScanNotFoundException(scanId));
-        return ScanRunResponse.fromEntity(scanRun);
+        return toResponse(scanRun);
+    }
+
+    private ScanRunResponse toResponse(ScanRun scanRun) {
+        List<ScannerOutcomeResponse> outcomes = scanOutcomeRepository
+                .findAllByScanRun_IdOrderByScannerAsc(scanRun.getId())
+                .stream()
+                .map(ScannerOutcomeResponse::fromEntity)
+                .toList();
+        return ScanRunResponse.fromEntity(scanRun, outcomes);
     }
 
     private User findUser(String authenticatedEmail) {

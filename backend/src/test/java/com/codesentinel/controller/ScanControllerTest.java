@@ -5,10 +5,14 @@ import com.codesentinel.model.ProjectUpload;
 import com.codesentinel.model.Role;
 import com.codesentinel.model.ScanRun;
 import com.codesentinel.model.ScanStatus;
+import com.codesentinel.model.ScanOutcome;
+import com.codesentinel.model.ScannerExecutionStatus;
+import com.codesentinel.model.ScannerType;
 import com.codesentinel.model.UploadStatus;
 import com.codesentinel.model.User;
 import com.codesentinel.repository.ProjectRepository;
 import com.codesentinel.repository.ProjectUploadRepository;
+import com.codesentinel.repository.ScanOutcomeRepository;
 import com.codesentinel.repository.ScanRunRepository;
 import com.codesentinel.repository.UserRepository;
 import com.codesentinel.service.ScanRunCoordinator;
@@ -63,6 +67,8 @@ class ScanControllerTest {
     @SpyBean
     private ScanRunRepository scanRunRepository;
     @Autowired
+    private ScanOutcomeRepository scanOutcomeRepository;
+    @Autowired
     private ScanRunCoordinator scanRunCoordinator;
 
     private UUID ownerProjectId;
@@ -78,6 +84,7 @@ class ScanControllerTest {
 
     @BeforeEach
     void setUp() throws IOException {
+        scanOutcomeRepository.deleteAll();
         scanRunRepository.deleteAll();
         uploadRepository.deleteAll();
         projectRepository.deleteAll();
@@ -115,7 +122,8 @@ class ScanControllerTest {
                 .andExpect(jsonPath("$.totalFindings", is(0)))
                 .andExpect(jsonPath("$.criticalCount", is(0)))
                 .andExpect(jsonPath("$.storageReference").doesNotExist())
-                .andExpect(jsonPath("$.rawOutput").doesNotExist());
+                .andExpect(jsonPath("$.rawOutput").doesNotExist())
+                .andExpect(jsonPath("$.scannerOutcomes", hasSize(0)));
         assertThat(scanRunRepository.count()).isEqualTo(1);
     }
 
@@ -124,14 +132,31 @@ class ScanControllerTest {
     @DisplayName("Scan history and detail are available to the owning user")
     void retrievesScanHistoryAndDetail() throws Exception {
         ScanRun saved = saveScan(saveOwnedUpload());
+        saved.setStatus(ScanStatus.SUCCEEDED);
+        saved.setCompletedAt(java.time.Instant.now());
+        saved = scanRunRepository.saveAndFlush(saved);
+        scanOutcomeRepository.save(ScanOutcome.builder()
+                .scanRun(saved)
+                .scanner(ScannerType.GITLEAKS)
+                .status(ScannerExecutionStatus.SUCCEEDED)
+                .findingCount(2)
+                .startedAt(java.time.Instant.now())
+                .completedAt(java.time.Instant.now())
+                .build());
 
         mockMvc.perform(get(scanCollectionUrl(ownerProjectId, ownerUploadId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].id", is(saved.getId().toString())));
+                .andExpect(jsonPath("$[0].id", is(saved.getId().toString())))
+                .andExpect(jsonPath("$[0].scannerOutcomes[0].scanner", is("GITLEAKS")))
+                .andExpect(jsonPath("$[0].scannerOutcomes[0].status", is("SUCCEEDED")))
+                .andExpect(jsonPath("$[0].scannerOutcomes[0].findingCount", is(2)))
+                .andExpect(jsonPath("$[0].scannerOutcomes[0].secret").doesNotExist())
+                .andExpect(jsonPath("$[0].scannerOutcomes[0].match").doesNotExist());
         mockMvc.perform(get("/api/v1/scans/" + saved.getId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.uploadId", is(ownerUploadId.toString())));
+                .andExpect(jsonPath("$.uploadId", is(ownerUploadId.toString())))
+                .andExpect(jsonPath("$.scannerOutcomes[0].scanner", is("GITLEAKS")));
     }
 
     @Test
@@ -194,11 +219,21 @@ class ScanControllerTest {
     void deletingProjectWithQueuedScanCleansUp() throws Exception {
         ProjectUpload upload = saveOwnedUpload();
         ScanRun scan = saveScan(upload);
+        scanOutcomeRepository.save(ScanOutcome.builder()
+                .scanRun(scan)
+                .scanner(ScannerType.GITLEAKS)
+                .status(ScannerExecutionStatus.FAILED)
+                .findingCount(0)
+                .failureCode(com.codesentinel.model.ScannerFailureCode.EXECUTION_ERROR)
+                .startedAt(java.time.Instant.now())
+                .completedAt(java.time.Instant.now())
+                .build());
 
         mockMvc.perform(delete("/api/v1/projects/" + ownerProjectId))
                 .andExpect(status().isNoContent());
 
         assertThat(scanRunRepository.findById(scan.getId())).isEmpty();
+        assertThat(scanOutcomeRepository.findAllByScanRun_IdOrderByScannerAsc(scan.getId())).isEmpty();
         assertThat(uploadRepository.findById(upload.getId())).isEmpty();
         assertThat(projectRepository.findById(ownerProjectId)).isEmpty();
         assertThat(scanRunCoordinator.claimNext(60_000)).isEmpty();

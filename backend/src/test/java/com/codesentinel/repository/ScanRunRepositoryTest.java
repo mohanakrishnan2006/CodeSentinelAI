@@ -25,6 +25,8 @@ class ScanRunRepositoryTest {
     @Autowired
     private ScanRunRepository scanRunRepository;
     @Autowired
+    private ScanOutcomeRepository scanOutcomeRepository;
+    @Autowired
     private ProjectUploadRepository uploadRepository;
     @Autowired
     private ProjectRepository projectRepository;
@@ -37,6 +39,7 @@ class ScanRunRepositoryTest {
 
     @BeforeEach
     void setUp() {
+        scanOutcomeRepository.deleteAll();
         scanRunRepository.deleteAll();
         uploadRepository.deleteAll();
         projectRepository.deleteAll();

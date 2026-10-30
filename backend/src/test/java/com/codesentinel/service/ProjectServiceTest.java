@@ -9,6 +9,7 @@ import com.codesentinel.model.ScanStatus;
 import com.codesentinel.model.User;
 import com.codesentinel.repository.ProjectRepository;
 import com.codesentinel.repository.ProjectUploadRepository;
+import com.codesentinel.repository.ScanOutcomeRepository;
 import com.codesentinel.repository.ScanRunRepository;
 import com.codesentinel.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +46,9 @@ class ProjectServiceTest {
 
     @Mock
     private ScanRunRepository scanRunRepository;
+
+    @Mock
+    private ScanOutcomeRepository scanOutcomeRepository;
 
     @Mock
     private UploadStorageService uploadStorageService;
@@ -124,6 +128,7 @@ class ProjectServiceTest {
                 org.mockito.ArgumentMatchers.eq(ScanStatus.QUEUED),
                 org.mockito.ArgumentMatchers.eq(ScanStatus.CANCELLED),
                 org.mockito.ArgumentMatchers.any());
+        verify(scanOutcomeRepository, org.mockito.Mockito.never()).deleteAllForUploads(any());
     }
 
     @Test

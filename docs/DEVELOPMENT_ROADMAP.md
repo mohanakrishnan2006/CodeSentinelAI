@@ -11,7 +11,7 @@ This document establishes the step-by-step implementation plan for CodeSentinel 
 | **Phase 0** | **Architecture & Blueprint** | System architecture, ER diagrams, API specs, environment setup. | Workspace initialized, docs approved. |
 | **Phase 1** | **Backend Foundation & Auth** | Spring Boot 3, PostgreSQL, Spring Security, JWT, User entity. | User registration/login tests passing, JWT validated. |
 | **Phase 2** | **Project & Secure Ingestion** | Projects, Versions, ZIP file upload, `Zip Slip` prevention. | Upload sample ZIP, verify safe extraction and DB records. |
-| **Phase 3** | **Static Security Scanners** | Scan-management foundation and isolated Semgrep worker integration; Gitleaks, secret masking, and findings persistence remain. | Scan requests are owner-scoped and linked to uploads; verify scanner results and later masked findings. |
+| **Phase 3** | **Static Security Scanners** | Scan management, isolated Semgrep and Gitleaks worker integration, and safe per-scanner outcomes. Findings persistence remains upcoming. | Verify owner-scoped scan requests, scanner outcomes, and Docker-isolated scanner execution. |
 | **Phase 4** | **AI Microservice & Ollama** | Python 3.12 FastAPI, Ollama `qwen2.5-coder:3b`, JSON schema. | Explanations and root cause generated via local LLM. |
 | **Phase 5** | **RAG & Code Fixes** | LangChain, ChromaDB, code chunking, unified diffs, patch applier. | Context-aware patch generated and applied, creating `v2`. |
 | **Phase 6** | **Frontend SPA** | React, Tailwind CSS, Monaco/Diff viewer, Scan Dashboard. | User can log in, upload code, view scan findings and diffs in UI. |
@@ -64,24 +64,24 @@ This document establishes the step-by-step implementation plan for CodeSentinel 
 ---
 
 ### Phase 3: Static Security Scanners Pipeline
-- **Objective**: Manage scan requests against specific uploaded snapshots, then integrate isolated Gitleaks and Semgrep analysis, redact discovered secrets, and persist structured findings.
-- **Implemented foundation**:
+- **Objective**: Manage scan requests against specific uploaded snapshots and run isolated Semgrep and Gitleaks analysis without persisting secret-bearing scanner output.
+- **Implemented and tested**:
   - `ScanRun` records reference a completed `ProjectUpload` and begin in `QUEUED` status.
   - Authenticated, owner-scoped endpoints create scan requests, list an upload's scan history, and retrieve scan details.
   - Safe response metadata includes lifecycle timestamps and zero-initialized summary counters; raw scanner output and secrets are not stored.
   - An opt-in host-side worker polls PostgreSQL, claims queued work atomically, validates upload storage references, and recovers expired leases as failed.
   - The placeholder executor does not inspect or execute source code. Project deletion cancels queued scans and returns 409 while a scan is running; existing post-commit uploaded-file cleanup is preserved.
-- **Remaining scanner work**:
-  - Database entities: `ScanReport`, `Vulnerability`, and `SecretFinding`.
-  - Scanner service executing Gitleaks CLI with JSON output formatting.
-  - Secret sanitizer utility: masks detected secrets (`[REDACTED_SECRET_<HASH>]`) before persistence and indexing.
-  - Persist validated Semgrep findings and add Gitleaks integration.
+  - The composite worker executes Semgrep first and Gitleaks second in restricted Docker containers. Both use pinned images and do not execute uploaded source code.
+  - Each scanner's outcome is persisted in `scan_outcomes` with its status, finding count, timestamps, and a controlled failure code. Raw scanner output, secret values, and matches are not persisted, logged, or returned.
+  - Normalized findings are validated and held in memory only; individual findings are not yet persisted or exposed through an API. Gitleaks findings currently use application severity `HIGH`.
+  - Automated tests and a real Docker end-to-end smoke test cover scanner execution and secret-safe outcomes.
+- **Upcoming milestone — Findings Management**:
+  - Add persistence for validated normalized findings and owner-scoped APIs to retrieve them safely.
+  - Define safe handling and presentation for secret findings without storing or exposing raw secret values or matches.
   - Security score calculation algorithm (0–100 scale based on severity weights: Critical -25, High -15, Medium -5, Low -1).
-  - Scan endpoints: trigger scan and retrieve findings.
 - **Verification Milestone**:
-  - Verify owner-scoped scan request lifecycle and upload linkage (implemented and covered by backend tests).
-  - Scan a mock project containing intentional hardcoded API keys and an SQL injection flaw.
-  - Confirm Gitleaks detects the secret, the secret is masked in the database, and Semgrep flags the SQL injection.
+  - Verify the owner-scoped scan request lifecycle and persisted scanner outcomes with backend tests.
+  - Scan a test project containing harmless secret-like data and an analyzable code pattern using the real Docker worker; confirm scanner results without retaining the dummy secret or raw matches.
 
 ---
 

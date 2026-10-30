@@ -14,6 +14,7 @@ import com.codesentinel.model.UploadStatus;
 import com.codesentinel.model.User;
 import com.codesentinel.repository.ProjectRepository;
 import com.codesentinel.repository.ProjectUploadRepository;
+import com.codesentinel.repository.ScanOutcomeRepository;
 import com.codesentinel.repository.ScanRunRepository;
 import com.codesentinel.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,6 +48,8 @@ class ScanServiceTest {
     @Mock
     private ScanRunRepository scanRunRepository;
     @Mock
+    private ScanOutcomeRepository scanOutcomeRepository;
+    @Mock
     private UserRepository userRepository;
 
     @InjectMocks
@@ -66,6 +69,8 @@ class ScanServiceTest {
                 .originalFilename("source.zip").fileCount(1).extractedSizeBytes(1).build();
 
         when(userRepository.findByEmail(OWNER_EMAIL)).thenReturn(Optional.of(owner));
+        lenient().when(scanOutcomeRepository.findAllByScanRun_IdOrderByScannerAsc(any()))
+                .thenReturn(List.of());
         lenient().when(projectRepository.findByIdAndOwnerIdForUpdate(project.getId(), owner.getId()))
                 .thenReturn(Optional.of(project));
         lenient().when(uploadRepository.findOneForOwnedProject(upload.getId(), project.getId(), owner.getId()))

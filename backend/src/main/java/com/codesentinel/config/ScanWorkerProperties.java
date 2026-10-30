@@ -19,6 +19,8 @@ public class ScanWorkerProperties {
 
     private static final Pattern PINNED_SEMGREP_IMAGE = Pattern.compile(
             "semgrep/semgrep:[0-9]+\\.[0-9]+\\.[0-9]+-nonroot@sha256:[a-f0-9]{64}");
+    private static final Pattern PINNED_GITLEAKS_IMAGE = Pattern.compile(
+            "ghcr\\.io/gitleaks/gitleaks:v[0-9]+\\.[0-9]+\\.[0-9]+@sha256:[a-f0-9]{64}");
 
     private boolean enabled;
 
@@ -58,6 +60,9 @@ public class ScanWorkerProperties {
     private String semgrepImage =
             "semgrep/semgrep:1.182.1-nonroot@sha256:0ed16bbbb23e5bf7c442df9144704d74b54ad2d003094e09905130d642f22473";
 
+    private String gitleaksImage =
+            "ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f";
+
     private String temporaryDirectory =
             Path.of(System.getProperty("java.io.tmpdir"), "codesentinel-scan-worker").toString();
 
@@ -77,5 +82,11 @@ public class ScanWorkerProperties {
             "Semgrep image must be pinned to an official non-root version and digest")
     public boolean isSemgrepImagePinned() {
         return semgrepImage != null && PINNED_SEMGREP_IMAGE.matcher(semgrepImage).matches();
+    }
+
+    @jakarta.validation.constraints.AssertTrue(message =
+            "Gitleaks image must be pinned to an official version and digest")
+    public boolean isGitleaksImagePinned() {
+        return gitleaksImage != null && PINNED_GITLEAKS_IMAGE.matcher(gitleaksImage).matches();
     }
 }

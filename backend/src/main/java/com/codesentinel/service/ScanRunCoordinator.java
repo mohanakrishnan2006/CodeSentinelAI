@@ -1,10 +1,12 @@
 package com.codesentinel.service;
 
 import com.codesentinel.model.ProjectUpload;
+import com.codesentinel.model.ScanOutcome;
 import com.codesentinel.model.ScanRun;
 import com.codesentinel.model.ScanStatus;
 import com.codesentinel.model.UploadStatus;
 import com.codesentinel.repository.ProjectRepository;
+import com.codesentinel.repository.ScanOutcomeRepository;
 import com.codesentinel.repository.ScanRunRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,6 +23,7 @@ public class ScanRunCoordinator {
     private static final int MAX_CLAIM_ATTEMPTS = 10;
 
     private final ScanRunRepository scanRunRepository;
+    private final ScanOutcomeRepository scanOutcomeRepository;
     private final ProjectRepository projectRepository;
 
     @Transactional
@@ -79,19 +82,36 @@ public class ScanRunCoordinator {
     }
 
     @Transactional
-    public boolean complete(UUID scanId, UUID claimToken, ScanExecutionResult result) {
-        return scanRunRepository.completeRunningScan(
+    public boolean complete(UUID scanId, UUID claimToken, ScanBatchResult result) {
+        Instant completedAt = Instant.now();
+        int updated = scanRunRepository.completeRunningScan(
                 scanId,
                 ScanStatus.RUNNING,
-                ScanStatus.SUCCEEDED,
-                Instant.now(),
+                result.status(),
+                completedAt,
                 claimToken,
                 result.totalFindings(),
                 Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.CRITICAL)),
                 Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.HIGH)),
                 Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.MEDIUM)),
                 Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.LOW)),
-                Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.INFO))) == 1;
+                Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.INFO)));
+        if (updated != 1) {
+            return false;
+        }
+        ScanRun scanRun = scanRunRepository.getReferenceById(scanId);
+        scanOutcomeRepository.saveAll(result.outcomes().stream()
+                .map(outcome -> ScanOutcome.builder()
+                        .scanRun(scanRun)
+                        .scanner(outcome.scanner())
+                        .status(outcome.status())
+                        .findingCount(outcome.findingCount())
+                        .failureCode(outcome.failureCode())
+                        .startedAt(outcome.startedAt())
+                        .completedAt(outcome.completedAt())
+                        .build())
+                .toList());
+        return true;
     }
 
     @Transactional

@@ -35,7 +35,7 @@ codesentinel:
     max-file-size-bytes: 52428800
   scan-worker:
     enabled: false
-    executor: semgrep
+    executor: composite
     poll-interval-ms: 1000
     lease-timeout-ms: 300000
     lease-heartbeat-interval-ms: 30000
@@ -48,4 +48,5 @@ codesentinel:
     process-limit: 128
     temporary-memory-bytes: 67108864
     semgrep-image: semgrep/semgrep:1.182.1-nonroot@sha256:0ed16bbbb23e5bf7c442df9144704d74b54ad2d003094e09905130d642f22473
+    gitleaks-image: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
     temporary-directory: ${java.io.tmpdir}/codesentinel-scan-worker

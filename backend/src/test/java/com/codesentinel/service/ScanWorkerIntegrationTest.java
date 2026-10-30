@@ -11,6 +11,7 @@ import com.codesentinel.model.UploadStatus;
 import com.codesentinel.model.User;
 import com.codesentinel.repository.ProjectRepository;
 import com.codesentinel.repository.ProjectUploadRepository;
+import com.codesentinel.repository.ScanOutcomeRepository;
 import com.codesentinel.repository.ScanRunRepository;
 import com.codesentinel.repository.UserRepository;
 import org.junit.jupiter.api.AfterAll;
@@ -64,6 +65,8 @@ class ScanWorkerIntegrationTest {
     @Autowired
     private ProjectUploadRepository uploadRepository;
     @Autowired
+    private ScanOutcomeRepository scanOutcomeRepository;
+    @Autowired
     private ScanRunRepository scanRunRepository;
     @Autowired
     private UserRepository userRepository;
@@ -82,6 +85,7 @@ class ScanWorkerIntegrationTest {
     @BeforeEach
     void setUp() throws IOException {
         reset(scanExecutor);
+        scanOutcomeRepository.deleteAll();
         scanRunRepository.deleteAll();
         uploadRepository.deleteAll();
         projectRepository.deleteAll();
@@ -187,7 +191,7 @@ class ScanWorkerIntegrationTest {
             ScanRun running = scanRunRepository.findById(scan.getId()).orElseThrow();
             assertThat(running.getLeaseExpiresAt())
                     .isAfter(running.getStartedAt().plusMillis(scanWorkerProperties.getLeaseTimeoutMs()));
-            return ScanExecutionResult.empty();
+            return ScanBatchResult.empty();
         }).when(scanExecutor).execute(any(ScanWorkItem.class));
 
         assertThat(workerService.processNextScan()).isTrue();
@@ -200,11 +204,15 @@ class ScanWorkerIntegrationTest {
     void persistsValidatedSummaryCounts() throws Exception {
         ScanRun scan = createQueuedScan();
         Files.createDirectories(STORAGE_DIRECTORY.resolve(upload.getStorageReference()));
-        ScanExecutionResult result = new ScanExecutionResult(List.of(
+        ScanExecutionResult scannerResult = new ScanExecutionResult(List.of(
                 new NormalizedScanFinding("rule.high", ScanFindingSeverity.HIGH, "High finding",
                         "src/Main.java", 1, 1, 1, 2, "SEMGREP", Map.of()),
                 new NormalizedScanFinding("rule.medium", ScanFindingSeverity.MEDIUM, "Medium finding",
                         "src/App.py", 2, 1, 2, 2, "SEMGREP", Map.of())));
+        ScanBatchResult result = new ScanBatchResult(scannerResult.findings(), List.of(
+                new ScannerExecutionOutcome(com.codesentinel.model.ScannerType.SEMGREP,
+                        com.codesentinel.model.ScannerExecutionStatus.SUCCEEDED, 2, null,
+                        Instant.now(), Instant.now())));
         doReturn(result).when(scanExecutor).execute(any(ScanWorkItem.class));
 
         assertThat(workerService.processNextScan()).isTrue();
@@ -213,6 +221,45 @@ class ScanWorkerIntegrationTest {
         assertThat(completed.getTotalFindings()).isEqualTo(2);
         assertThat(completed.getHighCount()).isEqualTo(1);
         assertThat(completed.getMediumCount()).isEqualTo(1);
+        assertThat(scanOutcomeRepository.findAllByScanRun_IdOrderByScannerAsc(scan.getId()))
+                .singleElement()
+                .satisfies(outcome -> {
+                    assertThat(outcome.getScanner()).isEqualTo(com.codesentinel.model.ScannerType.SEMGREP);
+                    assertThat(outcome.getFindingCount()).isEqualTo(2);
+                });
+    }
+
+    @Test
+    @DisplayName("Persists safe per-scanner outcomes and reports partial success")
+    void persistsPartialScannerOutcomes() throws Exception {
+        ScanRun scan = createQueuedScan();
+        Files.createDirectories(STORAGE_DIRECTORY.resolve(upload.getStorageReference()));
+        ScanExecutionResult scannerResult = new ScanExecutionResult(List.of(
+                new NormalizedScanFinding("rule.high", ScanFindingSeverity.HIGH, "Safe message",
+                        "src/Main.java", 1, 1, 1, 2, "SEMGREP", Map.of())));
+        ScanBatchResult result = new ScanBatchResult(scannerResult.findings(), List.of(
+                new ScannerExecutionOutcome(com.codesentinel.model.ScannerType.SEMGREP,
+                        com.codesentinel.model.ScannerExecutionStatus.SUCCEEDED, 1, null,
+                        Instant.now(), Instant.now()),
+                new ScannerExecutionOutcome(com.codesentinel.model.ScannerType.GITLEAKS,
+                        com.codesentinel.model.ScannerExecutionStatus.FAILED, 0,
+                        com.codesentinel.model.ScannerFailureCode.TIMEOUT, Instant.now(), Instant.now())));
+        doReturn(result).when(scanExecutor).execute(any(ScanWorkItem.class));
+
+        assertThat(workerService.processNextScan()).isTrue();
+
+        assertThat(scanRunRepository.findById(scan.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScanStatus.PARTIAL);
+        assertThat(scanOutcomeRepository.findAllByScanRun_IdOrderByScannerAsc(scan.getId()))
+                .hasSize(2)
+                .anySatisfy(outcome -> {
+                    assertThat(outcome.getScanner()).isEqualTo(com.codesentinel.model.ScannerType.GITLEAKS);
+                    assertThat(outcome.getStatus())
+                            .isEqualTo(com.codesentinel.model.ScannerExecutionStatus.FAILED);
+                    assertThat(outcome.getFailureCode())
+                            .isEqualTo(com.codesentinel.model.ScannerFailureCode.TIMEOUT);
+                    assertThat(outcome.getFindingCount()).isZero();
+                });
     }
 
     @Test
@@ -282,7 +329,7 @@ class ScanWorkerIntegrationTest {
         assertThat(oldClaim.claimToken()).isNotEqualTo(newClaim.claimToken());
         assertThat(coordinator.renew(scan.getId(), newClaim.claimToken(), 60_000)).isTrue();
         assertThat(coordinator.renew(scan.getId(), oldClaim.claimToken(), 60_000)).isFalse();
-        assertThat(coordinator.complete(scan.getId(), oldClaim.claimToken(), ScanExecutionResult.empty()))
+        assertThat(coordinator.complete(scan.getId(), oldClaim.claimToken(), ScanBatchResult.empty()))
                 .isFalse();
         assertThat(scanRunRepository.findById(scan.getId()).orElseThrow().getStatus())
                 .isEqualTo(ScanStatus.RUNNING);

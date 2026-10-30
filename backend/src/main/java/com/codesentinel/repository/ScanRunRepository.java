@@ -55,7 +55,7 @@ public interface ScanRunRepository extends JpaRepository<ScanRun, UUID> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update ScanRun scan
-            set scan.status = :status,
+            set scan.status = :completedStatus,
                 scan.completedAt = :completedAt,
                 scan.leaseExpiresAt = null,
                 scan.claimToken = null,
@@ -73,7 +73,7 @@ public interface ScanRunRepository extends JpaRepository<ScanRun, UUID> {
     int completeRunningScan(
             @Param("scanId") UUID scanId,
             @Param("running") ScanStatus running,
-            @Param("status") ScanStatus status,
+            @Param("completedStatus") ScanStatus completedStatus,
             @Param("completedAt") Instant completedAt,
             @Param("claimToken") UUID claimToken,
             @Param("totalFindings") int totalFindings,

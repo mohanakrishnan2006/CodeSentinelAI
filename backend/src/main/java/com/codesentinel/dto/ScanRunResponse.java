@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Value;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Value
@@ -25,10 +26,11 @@ public class ScanRunResponse {
     int mediumCount;
     int lowCount;
     int infoCount;
+    List<ScannerOutcomeResponse> scannerOutcomes;
     Instant createdAt;
     Instant updatedAt;
 
-    public static ScanRunResponse fromEntity(ScanRun scanRun) {
+    public static ScanRunResponse fromEntity(ScanRun scanRun, List<ScannerOutcomeResponse> scannerOutcomes) {
         return ScanRunResponse.builder()
                 .id(scanRun.getId())
                 .uploadId(scanRun.getProjectUpload().getId())
@@ -43,6 +45,7 @@ public class ScanRunResponse {
                 .mediumCount(scanRun.getMediumCount())
                 .lowCount(scanRun.getLowCount())
                 .infoCount(scanRun.getInfoCount())
+                .scannerOutcomes(List.copyOf(scannerOutcomes))
                 .createdAt(scanRun.getCreatedAt())
                 .updatedAt(scanRun.getUpdatedAt())
                 .build();
