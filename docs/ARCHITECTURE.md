@@ -231,8 +231,11 @@ The ER diagram below is the intended broader product model. In the current backe
 - **Worker foundation**:
   - A separate host-side Java process can poll PostgreSQL when `codesentinel.scan-worker.enabled=true`; the API process leaves this disabled.
   - The worker atomically claims queued scans under a project row lock, validates the completed upload and resolves its UUID storage reference under the configured upload root.
-  - A placeholder executor does not read or execute source files and marks the request complete. This is infrastructure only; it is not evidence that a scanner ran.
-  - Expired leases are marked `FAILED`. The worker and backend must use the same PostgreSQL database and upload-storage directory.
+  - The development worker uses the pinned official Semgrep non-root image `semgrep/semgrep:1.182.1-nonroot@sha256:0ed16bbbb23e5bf7c442df9144704d74b54ad2d003094e09905130d642f22473`; tests select a placeholder executor and never require Docker.
+  - The worker stages only the selected upload into bounded temporary storage, mounts the staged snapshot at `/src` read-only, and removes the temporary files and container after the scan.
+  - Semgrep runs with no network, a read-only container root, dropped capabilities, no-new-privileges, CPU/memory/process limits, and bounded output and execution time. It does not execute uploaded scripts or build steps.
+  - A claim token prevents stale workers from updating a newer claim. A separate heartbeat renews active leases; expired leases are marked `FAILED`. The worker and backend must use the same PostgreSQL database and upload-storage directory.
+  - Parsed findings are held in memory only. The temporary Semgrep severity mapping is `CRITICAL` → `CRITICAL`, `ERROR` → `HIGH`, `WARNING` → `MEDIUM`, and `INFO` → `INFO`; this mapping is internal until findings persistence is implemented. Raw scanner output and source snippets are not stored.
   - To run locally from `backend/`, package with `mvn package`, then start the API with `java -jar target/codesentinel-backend-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev`. In another terminal, start the worker with `java -jar target/codesentinel-backend-0.0.1-SNAPSHOT.jar --codesentinel.worker-process=true --codesentinel.scan-worker.enabled=true --spring.profiles.active=dev`.
 - **Planned, not yet implemented**:
   - `POST /projects/{projectId}/versions/{versionId}/trigger`: Run Gitleaks + Semgrep scans asynchronously.

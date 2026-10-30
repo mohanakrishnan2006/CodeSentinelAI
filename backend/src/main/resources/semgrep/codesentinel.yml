@@ -1,0 +1,33 @@
+rules:
+  - id: codesentinel.python.dynamic-eval
+    languages:
+      - python
+    message: Dynamic code execution through eval should be reviewed.
+    severity: WARNING
+    patterns:
+      - pattern: eval($VALUE)
+
+  - id: codesentinel.python.dynamic-exec
+    languages:
+      - python
+    message: Dynamic code execution through exec should be reviewed.
+    severity: ERROR
+    patterns:
+      - pattern: exec($VALUE)
+
+  - id: codesentinel.java.sql-string-concatenation
+    languages:
+      - java
+    message: SQL built by string concatenation may be vulnerable to injection.
+    severity: WARNING
+    patterns:
+      - pattern: $STATEMENT.executeQuery($QUERY + $INPUT)
+
+  - id: codesentinel.javascript.dynamic-eval
+    languages:
+      - javascript
+      - typescript
+    message: Dynamic code execution through eval should be reviewed.
+    severity: ERROR
+    patterns:
+      - pattern: eval($VALUE)

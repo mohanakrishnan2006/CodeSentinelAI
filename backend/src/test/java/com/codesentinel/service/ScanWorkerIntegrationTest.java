@@ -1,8 +1,10 @@
 package com.codesentinel.service;
 
+import com.codesentinel.config.ScanWorkerProperties;
 import com.codesentinel.model.Project;
 import com.codesentinel.model.ProjectUpload;
 import com.codesentinel.model.Role;
+import com.codesentinel.model.ScanFindingSeverity;
 import com.codesentinel.model.ScanRun;
 import com.codesentinel.model.ScanStatus;
 import com.codesentinel.model.UploadStatus;
@@ -29,6 +31,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -38,6 +41,8 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
@@ -62,6 +67,8 @@ class ScanWorkerIntegrationTest {
     private ScanRunRepository scanRunRepository;
     @Autowired
     private UserRepository userRepository;
+    @Autowired
+    private ScanWorkerProperties scanWorkerProperties;
     @SpyBean
     private ScanExecutor scanExecutor;
 
@@ -171,6 +178,44 @@ class ScanWorkerIntegrationTest {
     }
 
     @Test
+    @DisplayName("Renews the scan lease while the executor is active")
+    void renewsLeaseDuringExecution() throws Exception {
+        ScanRun scan = createQueuedScan();
+        Files.createDirectories(STORAGE_DIRECTORY.resolve(upload.getStorageReference()));
+        doAnswer(invocation -> {
+            Thread.sleep(100);
+            ScanRun running = scanRunRepository.findById(scan.getId()).orElseThrow();
+            assertThat(running.getLeaseExpiresAt())
+                    .isAfter(running.getStartedAt().plusMillis(scanWorkerProperties.getLeaseTimeoutMs()));
+            return ScanExecutionResult.empty();
+        }).when(scanExecutor).execute(any(ScanWorkItem.class));
+
+        assertThat(workerService.processNextScan()).isTrue();
+        assertThat(scanRunRepository.findById(scan.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScanStatus.SUCCEEDED);
+    }
+
+    @Test
+    @DisplayName("Persists summary counts from validated in-memory findings")
+    void persistsValidatedSummaryCounts() throws Exception {
+        ScanRun scan = createQueuedScan();
+        Files.createDirectories(STORAGE_DIRECTORY.resolve(upload.getStorageReference()));
+        ScanExecutionResult result = new ScanExecutionResult(List.of(
+                new NormalizedScanFinding("rule.high", ScanFindingSeverity.HIGH, "High finding",
+                        "src/Main.java", 1, 1, 1, 2, "SEMGREP", Map.of()),
+                new NormalizedScanFinding("rule.medium", ScanFindingSeverity.MEDIUM, "Medium finding",
+                        "src/App.py", 2, 1, 2, 2, "SEMGREP", Map.of())));
+        doReturn(result).when(scanExecutor).execute(any(ScanWorkItem.class));
+
+        assertThat(workerService.processNextScan()).isTrue();
+        ScanRun completed = scanRunRepository.findById(scan.getId()).orElseThrow();
+        assertThat(completed.getStatus()).isEqualTo(ScanStatus.SUCCEEDED);
+        assertThat(completed.getTotalFindings()).isEqualTo(2);
+        assertThat(completed.getHighCount()).isEqualTo(1);
+        assertThat(completed.getMediumCount()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("Missing upload storage fails the scan safely")
     void failsWhenUploadDirectoryIsMissing() {
         ScanRun scan = createQueuedScan();
@@ -219,6 +264,28 @@ class ScanWorkerIntegrationTest {
         assertThat(saved.getStatus()).isEqualTo(ScanStatus.FAILED);
         assertThat(saved.getCompletedAt()).isNotNull();
         assertThat(saved.getLeaseExpiresAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("An expired claim cannot overwrite the result of a later claim")
+    void rejectsStaleClaimCompletion() {
+        ScanRun scan = createQueuedScan();
+        ScanRunCoordinator.ClaimedScan oldClaim = coordinator.claimNext(1).orElseThrow();
+        assertThat(coordinator.failExpiredScans(Instant.now().plusSeconds(2))).isEqualTo(1);
+
+        ScanRun recovered = scanRunRepository.findById(scan.getId()).orElseThrow();
+        recovered.setStatus(ScanStatus.QUEUED);
+        recovered.setCompletedAt(null);
+        scanRunRepository.saveAndFlush(recovered);
+        ScanRunCoordinator.ClaimedScan newClaim = coordinator.claimNext(60_000).orElseThrow();
+
+        assertThat(oldClaim.claimToken()).isNotEqualTo(newClaim.claimToken());
+        assertThat(coordinator.renew(scan.getId(), newClaim.claimToken(), 60_000)).isTrue();
+        assertThat(coordinator.renew(scan.getId(), oldClaim.claimToken(), 60_000)).isFalse();
+        assertThat(coordinator.complete(scan.getId(), oldClaim.claimToken(), ScanExecutionResult.empty()))
+                .isFalse();
+        assertThat(scanRunRepository.findById(scan.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScanStatus.RUNNING);
     }
 
     private ScanRun createQueuedScan() {

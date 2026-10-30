@@ -40,12 +40,14 @@ public class ScanRunCoordinator {
             }
 
             Instant now = Instant.now();
+            UUID claimToken = UUID.randomUUID();
             int claimed = scanRunRepository.claimQueuedScan(
                     candidate.getId(),
                     ScanStatus.QUEUED,
                     ScanStatus.RUNNING,
                     now,
-                    now.plusMillis(leaseTimeoutMs));
+                    now.plusMillis(leaseTimeoutMs),
+                    claimToken);
             if (claimed == 0) {
                 continue;
             }
@@ -54,11 +56,11 @@ public class ScanRunCoordinator {
             ProjectUpload claimedUpload = scanRun.getProjectUpload();
             if (claimedUpload.getStatus() != UploadStatus.COMPLETED) {
                 scanRunRepository.failRunningScan(
-                        scanRun.getId(), ScanStatus.RUNNING, ScanStatus.FAILED, Instant.now());
+                        scanRun.getId(), ScanStatus.RUNNING, ScanStatus.FAILED, Instant.now(), claimToken);
                 continue;
             }
             return Optional.of(new ClaimedScan(
-                    scanRun.getId(), claimedUpload.getId(), claimedUpload.getStorageReference()));
+                    scanRun.getId(), claimedUpload.getId(), claimedUpload.getStorageReference(), claimToken));
         }
         return Optional.empty();
     }
@@ -70,17 +72,34 @@ public class ScanRunCoordinator {
     }
 
     @Transactional
-    public boolean complete(UUID scanId) {
-        return scanRunRepository.completeRunningScan(
-                scanId, ScanStatus.RUNNING, ScanStatus.SUCCEEDED, Instant.now()) == 1;
+    public boolean renew(UUID scanId, UUID claimToken, long leaseTimeoutMs) {
+        Instant now = Instant.now();
+        return scanRunRepository.renewRunningScan(
+                scanId, ScanStatus.RUNNING, now, now.plusMillis(leaseTimeoutMs), claimToken) == 1;
     }
 
     @Transactional
-    public boolean fail(UUID scanId) {
-        return scanRunRepository.failRunningScan(
-                scanId, ScanStatus.RUNNING, ScanStatus.FAILED, Instant.now()) == 1;
+    public boolean complete(UUID scanId, UUID claimToken, ScanExecutionResult result) {
+        return scanRunRepository.completeRunningScan(
+                scanId,
+                ScanStatus.RUNNING,
+                ScanStatus.SUCCEEDED,
+                Instant.now(),
+                claimToken,
+                result.totalFindings(),
+                Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.CRITICAL)),
+                Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.HIGH)),
+                Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.MEDIUM)),
+                Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.LOW)),
+                Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.INFO))) == 1;
     }
 
-    public record ClaimedScan(UUID scanId, UUID uploadId, String storageReference) {
+    @Transactional
+    public boolean fail(UUID scanId, UUID claimToken) {
+        return scanRunRepository.failRunningScan(
+                scanId, ScanStatus.RUNNING, ScanStatus.FAILED, Instant.now(), claimToken) == 1;
+    }
+
+    public record ClaimedScan(UUID scanId, UUID uploadId, String storageReference, UUID claimToken) {
     }
 }

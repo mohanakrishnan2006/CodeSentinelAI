@@ -60,6 +60,9 @@ public class ScanRun {
     @Column(name = "lease_expires_at")
     private Instant leaseExpiresAt;
 
+    @Column(name = "claim_token")
+    private UUID claimToken;
+
     @Column(name = "completed_at")
     private Instant completedAt;
 

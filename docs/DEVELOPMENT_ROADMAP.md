@@ -11,7 +11,7 @@ This document establishes the step-by-step implementation plan for CodeSentinel 
 | **Phase 0** | **Architecture & Blueprint** | System architecture, ER diagrams, API specs, environment setup. | Workspace initialized, docs approved. |
 | **Phase 1** | **Backend Foundation & Auth** | Spring Boot 3, PostgreSQL, Spring Security, JWT, User entity. | User registration/login tests passing, JWT validated. |
 | **Phase 2** | **Project & Secure Ingestion** | Projects, Versions, ZIP file upload, `Zip Slip` prevention. | Upload sample ZIP, verify safe extraction and DB records. |
-| **Phase 3** | **Static Security Scanners** | Scan-management foundation implemented; Gitleaks, Semgrep, secret masking, and finding normalization remain. | Scan requests are owner-scoped and linked to uploads; later verify masked findings from real scans. |
+| **Phase 3** | **Static Security Scanners** | Scan-management foundation and isolated Semgrep worker integration; Gitleaks, secret masking, and findings persistence remain. | Scan requests are owner-scoped and linked to uploads; verify scanner results and later masked findings. |
 | **Phase 4** | **AI Microservice & Ollama** | Python 3.12 FastAPI, Ollama `qwen2.5-coder:3b`, JSON schema. | Explanations and root cause generated via local LLM. |
 | **Phase 5** | **RAG & Code Fixes** | LangChain, ChromaDB, code chunking, unified diffs, patch applier. | Context-aware patch generated and applied, creating `v2`. |
 | **Phase 6** | **Frontend SPA** | React, Tailwind CSS, Monaco/Diff viewer, Scan Dashboard. | User can log in, upload code, view scan findings and diffs in UI. |
@@ -75,7 +75,7 @@ This document establishes the step-by-step implementation plan for CodeSentinel 
   - Database entities: `ScanReport`, `Vulnerability`, and `SecretFinding`.
   - Scanner service executing Gitleaks CLI with JSON output formatting.
   - Secret sanitizer utility: masks detected secrets (`[REDACTED_SECRET_<HASH>]`) before persistence and indexing.
-  - Semgrep execution engine running OWASP Top 10 rulesets, parsing JSON findings.
+  - Persist validated Semgrep findings and add Gitleaks integration.
   - Security score calculation algorithm (0–100 scale based on severity weights: Critical -25, High -15, Medium -5, Low -1).
   - Scan endpoints: trigger scan and retrieve findings.
 - **Verification Milestone**:

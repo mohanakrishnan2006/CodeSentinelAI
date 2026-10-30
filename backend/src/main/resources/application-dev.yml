@@ -35,5 +35,17 @@ codesentinel:
     max-file-size-bytes: 52428800
   scan-worker:
     enabled: false
+    executor: semgrep
     poll-interval-ms: 1000
     lease-timeout-ms: 300000
+    lease-heartbeat-interval-ms: 30000
+    execution-timeout-ms: 120000
+    docker-command-timeout-ms: 15000
+    max-output-bytes: 10485760
+    max-source-bytes: 262144000
+    memory-limit-bytes: 536870912
+    cpu-limit: 1.0
+    process-limit: 128
+    temporary-memory-bytes: 67108864
+    semgrep-image: semgrep/semgrep:1.182.1-nonroot@sha256:0ed16bbbb23e5bf7c442df9144704d74b54ad2d003094e09905130d642f22473
+    temporary-directory: ${java.io.tmpdir}/codesentinel-scan-worker

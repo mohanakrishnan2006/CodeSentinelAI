@@ -24,6 +24,7 @@ public interface ScanRunRepository extends JpaRepository<ScanRun, UUID> {
             set scan.status = :running,
                 scan.startedAt = :now,
                 scan.leaseExpiresAt = :leaseExpiresAt,
+                scan.claimToken = :claimToken,
                 scan.updatedAt = :now
             where scan.id = :scanId and scan.status = :queued
             """)
@@ -32,7 +33,24 @@ public interface ScanRunRepository extends JpaRepository<ScanRun, UUID> {
             @Param("queued") ScanStatus queued,
             @Param("running") ScanStatus running,
             @Param("now") Instant now,
-            @Param("leaseExpiresAt") Instant leaseExpiresAt);
+            @Param("leaseExpiresAt") Instant leaseExpiresAt,
+            @Param("claimToken") UUID claimToken);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update ScanRun scan
+            set scan.leaseExpiresAt = :leaseExpiresAt,
+                scan.updatedAt = :now
+            where scan.id = :scanId and scan.status = :running
+              and scan.claimToken = :claimToken
+              and scan.leaseExpiresAt > :now
+            """)
+    int renewRunningScan(
+            @Param("scanId") UUID scanId,
+            @Param("running") ScanStatus running,
+            @Param("now") Instant now,
+            @Param("leaseExpiresAt") Instant leaseExpiresAt,
+            @Param("claimToken") UUID claimToken);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
@@ -40,14 +58,30 @@ public interface ScanRunRepository extends JpaRepository<ScanRun, UUID> {
             set scan.status = :status,
                 scan.completedAt = :completedAt,
                 scan.leaseExpiresAt = null,
+                scan.claimToken = null,
+                scan.totalFindings = :totalFindings,
+                scan.criticalCount = :criticalCount,
+                scan.highCount = :highCount,
+                scan.mediumCount = :mediumCount,
+                scan.lowCount = :lowCount,
+                scan.infoCount = :infoCount,
                 scan.updatedAt = :completedAt
             where scan.id = :scanId and scan.status = :running
+              and scan.claimToken = :claimToken
+              and scan.leaseExpiresAt > :completedAt
             """)
     int completeRunningScan(
             @Param("scanId") UUID scanId,
             @Param("running") ScanStatus running,
             @Param("status") ScanStatus status,
-            @Param("completedAt") Instant completedAt);
+            @Param("completedAt") Instant completedAt,
+            @Param("claimToken") UUID claimToken,
+            @Param("totalFindings") int totalFindings,
+            @Param("criticalCount") int criticalCount,
+            @Param("highCount") int highCount,
+            @Param("mediumCount") int mediumCount,
+            @Param("lowCount") int lowCount,
+            @Param("infoCount") int infoCount);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
@@ -55,14 +89,17 @@ public interface ScanRunRepository extends JpaRepository<ScanRun, UUID> {
             set scan.status = :failed,
                 scan.completedAt = :completedAt,
                 scan.leaseExpiresAt = null,
+                scan.claimToken = null,
                 scan.updatedAt = :completedAt
             where scan.id = :scanId and scan.status = :running
+              and scan.claimToken = :claimToken
             """)
     int failRunningScan(
             @Param("scanId") UUID scanId,
             @Param("running") ScanStatus running,
             @Param("failed") ScanStatus failed,
-            @Param("completedAt") Instant completedAt);
+            @Param("completedAt") Instant completedAt,
+            @Param("claimToken") UUID claimToken);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
@@ -70,6 +107,7 @@ public interface ScanRunRepository extends JpaRepository<ScanRun, UUID> {
             set scan.status = :failed,
                 scan.completedAt = :completedAt,
                 scan.leaseExpiresAt = null,
+                scan.claimToken = null,
                 scan.updatedAt = :completedAt
             where scan.status = :running and scan.leaseExpiresAt < :now
             """)
