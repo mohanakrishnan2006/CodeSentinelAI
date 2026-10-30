@@ -24,14 +24,14 @@
 |                                                     | Static Scanners (Semgrep, Gitleaks, Trivy)|                                             |
 +-------------------+---------------------------------+-----------------+------------------+-------------------------+
                     |                                                   |
-                    | JDBC / JPA (Spring Data JPA)                      | REST / JSON (Internal HTTP Client)
+                    | JDBC / JPA (Spring Data JPA)                                          | REST / JSON (future backend integration)
                     v                                                   v
 +-------------------+--------------+                  +-----------------+--------------------------------------------+
-|        PostgreSQL Database       |                  |            Python FastAPI AI Microservice                    |
+|        PostgreSQL Database       |                  | Python FastAPI AI Service (health foundation implemented)    |
 |                                  |                  |                                                              |
 | - Users & Roles                  |                  |  +------------------------+    +--------------------------+  |
-| - Projects & Versions            |                  |  |  RAG / Embeddings      |    |  Ollama Client           |  |
-| - Vulnerabilities & Secrets      |                  |  |  (LangChain + ChromaDB)|    |  (qwen2.5-coder:3b)      |  |
+| - Projects & Versions            |                  |  | Planned RAG / Embedding|    | Ollama availability     |  |
+| - Vulnerabilities & Secrets      |                  |  | (LangChain + ChromaDB) |    | check (HTTPX)           |  |
 | - Code Fixes & Reviews           |                  |  +------------------------+    +--------------------------+  |
 | - Test Logs & Audit Records      |                  +--------------------------------------------------------------+
 +----------------------------------+                                    |
@@ -64,7 +64,7 @@
   - `Security & Auth`: User authentication, BCrypt password hashing, JWT filter chain.
   - `Project Service`: Manages project lifecycle, safe ZIP extraction (`Zip Slip` prevention), and directory version trees.
   - `Scan Orchestrator`: Executes Semgrep, Gitleaks, and Trivy sequentially in isolated containers, validates and normalizes results, and stores safe finding fields in PostgreSQL.
-  - `AI Gateway Service`: Coordinates with the Python AI microservice, passing masked snippets and retrieving structured explanations and diffs.
+  - `AI Gateway Service` (planned): Will coordinate with the Python AI microservice using sanitized inputs and validated responses.
   - `Sandbox Orchestrator`: Interacts with Docker Engine via Docker CLI/API to spin up ephemeral test containers with strict resource caps.
   - `Report Service`: Assembles vulnerability and compliance data into formatted PDF documents using OpenPDF.
 - **Communication**:
@@ -77,14 +77,13 @@
 - **Integrity**: Enforces ACID compliance, foreign-key constraints, cascading deletes where appropriate, and unique indexing on emails and project paths.
 
 ### 2.4 Python FastAPI AI Microservice
-- **Role**: Specialized service for code semantics, vector embeddings, RAG queries, and LLM inference.
-- **Key Capabilities**:
-  - **FastAPI + Pydantic**: Exposes typed, high-performance REST endpoints with strict request/response validation.
-  - **Code Chunking**: Uses LangChain language-aware text splitters to partition source code along class, function, or logical block boundaries.
-  - **Vector Storage (ChromaDB)**: Embeds and stores code representations, isolated per project version collection.
-  - **Semantic Context Retrieval**: Given a vulnerability location, retrieves related functions, imported symbols, and type definitions.
-  - **Local Ollama Integration**: Prompts `qwen2.5-coder:3b` using strict system instructions to produce beginner-friendly explanations and unified diff patches.
-- **Security Boundary**: Accepts **only pre-sanitized** code snippets with secrets already masked.
+- **Role**: Separate Python service foundation for future local LLM-powered analysis.
+- **Implemented foundation**:
+  - **FastAPI + Pydantic Settings**: Provides typed health endpoints and reads configuration from environment variables or the service-local `.env`.
+  - **Ollama availability check**: Uses HTTPX with connection/request timeouts to query `/api/tags` and check for the configured model. It does not download the model.
+  - `GET /health` reports service health; `GET /health/ollama` reports model availability or returns a controlled `503 Service Unavailable` response without exposing internal errors or configuration.
+  - Tests mock HTTPX responses and require neither Ollama nor internet access.
+- **Not implemented in this milestone**: code analysis/generation endpoints, Spring Boot integration, RAG, code chunking, ChromaDB, LangChain, or AI-generated fixes. Future code-analysis endpoints must accept only pre-sanitized inputs with secrets already masked.
 
 ### 2.5 Security Scanners
 - **Semgrep**: Runs first using the trusted ruleset and maps its severities to the application model.

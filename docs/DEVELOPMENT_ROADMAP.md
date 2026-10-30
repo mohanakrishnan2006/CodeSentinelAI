@@ -12,7 +12,7 @@ This document establishes the step-by-step implementation plan for CodeSentinel 
 | **Phase 1** | **Backend Foundation & Auth** | Spring Boot 3, PostgreSQL, Spring Security, JWT, User entity. | User registration/login tests passing, JWT validated. |
 | **Phase 2** | **Project & Secure Ingestion** | Projects, Versions, ZIP file upload, `Zip Slip` prevention. | Upload sample ZIP, verify safe extraction and DB records. |
 | **Phase 3** | **Static Security Scanners** | Scan management, isolated Semgrep/Gitleaks/Trivy integration, safe per-scanner outcomes, findings persistence, and owner-scoped findings APIs. | Verify scanner outcomes, persisted safe findings, ownership isolation, and Docker security controls. |
-| **Phase 4** | **AI Microservice & Ollama** | Python 3.12 FastAPI, Ollama `qwen2.5-coder:3b`, JSON schema. | Explanations and root cause generated via local LLM. |
+| **Phase 4** | **AI Microservice & Ollama** | Python 3.12 FastAPI foundation, health endpoints, and safe Ollama/model availability checks. | Automated mocked tests cover healthy, unavailable, and missing-model responses without Ollama or internet. |
 | **Phase 5** | **RAG & Code Fixes** | LangChain, ChromaDB, code chunking, unified diffs, patch applier. | Context-aware patch generated and applied, creating `v2`. |
 | **Phase 6** | **Frontend SPA** | React, Tailwind CSS, Monaco/Diff viewer, Scan Dashboard. | User can log in, upload code, view scan findings and diffs in UI. |
 | **Phase 7** | **Docker Test Sandbox** | Isolated Docker containers (`--network none`, resource limits). | Untrusted tests run safely in sandbox; logs streamed to backend. |
@@ -86,16 +86,21 @@ This document establishes the step-by-step implementation plan for CodeSentinel 
 ---
 
 ### Phase 4: AI Microservice & Local Ollama Integration
-- **Objective**: Build the Python 3.12 FastAPI microservice and connect it to local Ollama (`qwen2.5-coder:3b`) for structured vulnerability explanations.
-- **Key Deliverables**:
-  - FastAPI application structure (`main.py`, `app/api/`, `app/services/`, `app/models/`).
-  - Ollama client communication service via HTTP (`localhost:11434/api/generate` or official ollama library).
-  - Pydantic models enforcing strict JSON outputs (`explanation`, `rootCause`, `suggestedSnippet`).
-  - Prompt engineering templates tailored for security analysis and beginner-friendly mentorship.
-  - Integration between Spring Boot backend and FastAPI service (`POST /vulnerabilities/{id}/explain`).
+- **Objective**: Build the Python 3.12 FastAPI service foundation and safely verify local Ollama/model availability before adding analysis features.
+- **Milestone 2.1 — AI Microservice Foundation (implemented)**:
+  - Separate `ai-service/` application using FastAPI, Pydantic Settings, Uvicorn, HTTPX, and Pytest.
+  - `GET /health` reports the service name and health status.
+  - `GET /health/ollama` queries the configured Ollama `/api/tags` endpoint with bounded connection and request timeouts and checks for `qwen2.5-coder:3b` by default.
+  - Ollama connectivity failures and missing models return controlled `503` responses. Model downloads are never initiated automatically.
+  - Tests use mocked HTTPX transports and do not require Ollama or internet access.
+  - Windows PowerShell setup and start instructions are in `ai-service/README.md`.
+- **Future Phase 4 work**:
+  - Add carefully scoped, typed code-analysis request and response models and prompts.
+  - Integrate the Spring Boot backend with the AI service after the service API is defined.
+  - Add explanation generation only; RAG, ChromaDB, LangChain, and AI-generated fixes are separate later milestones.
 - **Verification Milestone**:
-  - Run Pytest suite for FastAPI endpoints.
-  - Verify an explanation is generated for a flagged vulnerability without any hallucinated formatting.
+  - Run the service Pytest suite with Python 3.12.
+  - Verify health, successful Ollama connectivity, unavailable Ollama, and missing configured model using mocked HTTPX responses.
 
 ---
 

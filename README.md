@@ -1,6 +1,6 @@
 # CodeSentinel AI 🛡️
 
-> **An AI-powered source-code quality and security analysis platform featuring local LLMs, private RAG context retrieval, and zero-network Docker sandboxing.**
+> **A source-code security analysis platform under incremental development, with a local AI service foundation and zero-network scanner isolation.**
 
 ---
 
@@ -9,7 +9,7 @@
 **CodeSentinel AI** is an intelligent, developer-centric security auditing and code quality platform. It enables software developers to upload source code, identify vulnerabilities (OWASP Top 10) and exposed secrets (API keys, credentials), receive clear explanations powered by local AI, safely preview side-by-side patch diffs, and run test suites inside an isolated, resource-capped Docker sandbox.
 
 ### Key Capabilities
-- 🔒 **Private & Local AI**: Powered by local LLMs (via Ollama) and an isolated ChromaDB RAG pipeline—your source code is never transmitted to external AI APIs.
+- 🔒 **Private & Local AI Foundation**: A separate FastAPI service checks local Ollama connectivity and configured model availability. Code analysis and RAG are future milestones.
 - 🔍 **Multi-Engine Static Scanning**: Automated vulnerability scanning with Semgrep and secret detection with Gitleaks.
 - 🛡️ **Zero-Network Docker Sandbox**: Untrusted code and tests execute in isolated, resource-limited Docker containers (`--network none`, `--memory 512m`).
 - 🔄 **Code Versioning & Rollback**: Automatic, immutable version snapshots (`v1`, `v2`, ...) created upon applying suggested fixes with one-click rollback.
@@ -29,8 +29,8 @@ Java 21 Spring Boot Main Backend
       ├── Static Scanners (Gitleaks, Semgrep CLI)
       ├── Isolated Docker Test Workers (--network none, 512MB RAM)
       └── Python 3.12 FastAPI AI Service
-            ├── Local Ollama Engine (qwen2.5-coder:3b)
-            └── Local ChromaDB Vector Store (RAG code chunking & semantic search)
+            ├── Ollama availability check (HTTPX)
+            └── Planned RAG / ChromaDB integration
 ```
 
 ---
@@ -51,8 +51,8 @@ Detailed architecture blueprints and guides are available in the [`docs/`](docs/
 | **Frontend** | React 18, JavaScript, Tailwind CSS, React Router, Axios, Monaco / Diff Viewer |
 | **Main Backend** | Java 21 LTS, Spring Boot 3, Maven, Spring Security (JWT), Spring Data JPA, Hibernate |
 | **Database** | PostgreSQL 16 |
-| **AI Microservice** | Python 3.12, FastAPI, Pydantic, Uvicorn |
-| **Local AI & RAG** | Ollama (`qwen2.5-coder:3b`), ChromaDB, LangChain |
+| **AI Microservice** | Python 3.12, FastAPI, Pydantic Settings, Uvicorn, HTTPX |
+| **Local AI & RAG** | Ollama (`qwen2.5-coder:3b`) availability foundation; ChromaDB/LangChain planned |
 | **Security Scanners** | Gitleaks, Semgrep, Trivy |
 | **Sandboxing & Testing** | Docker (`--network none`), JUnit 5, Pytest |
 | **Reports** | OpenPDF / iText |
@@ -64,10 +64,11 @@ Detailed architecture blueprints and guides are available in the [`docs/`](docs/
 We are developing CodeSentinel AI incrementally following our review-driven workflow:
 
 - [x] **Phase 0**: Architecture, Blueprint & Documentation Setup
-- [ ] **Phase 1**: Backend Foundation, Authentication & Database Design *(Next)*
-- [ ] **Phase 2**: Project Management & Secure File Ingestion
-- [ ] **Phase 3**: Static Security Scanners Pipeline
-- [ ] **Phase 4**: AI Microservice & Local Ollama Integration
+- [x] **Phase 1**: Backend Foundation, Authentication & Database Design
+- [x] **Phase 2**: Project Management & Secure File Ingestion
+- [x] **Phase 3**: Static Security Scanners Pipeline
+- [x] **Phase 4, Milestone 2.1**: AI Microservice Foundation (FastAPI and Ollama health checks)
+- [ ] **Phase 4**: Structured AI Code Analysis Integration
 - [ ] **Phase 5**: RAG Pipeline & Context-Aware Code Fixes
 - [ ] **Phase 6**: Frontend Single Page Application
 - [ ] **Phase 7**: Docker Isolated Testing Sandbox
