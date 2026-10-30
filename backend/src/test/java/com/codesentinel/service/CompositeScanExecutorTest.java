@@ -38,6 +38,30 @@ class CompositeScanExecutorTest {
     }
 
     @Test
+    @DisplayName("Runs Trivy after Semgrep and Gitleaks and reports partial success on Trivy failure")
+    void runsAllScannersInOrderAndReportsTrivyFailure() {
+        CompositeScanExecutor executor = new CompositeScanExecutor(List.of(
+                adapter(ScannerType.TRIVY, null,
+                        new ScanExecutionException("private database detail",
+                                ScannerFailureCode.DATABASE_UNAVAILABLE)),
+                adapter(ScannerType.GITLEAKS, ScanExecutionResult.empty(), null),
+                adapter(ScannerType.SEMGREP, result(ScanFindingSeverity.HIGH), null)));
+
+        ScanBatchResult result = executor.execute(WORK_ITEM);
+
+        assertThat(result.status()).isEqualTo(ScanStatus.PARTIAL);
+        assertThat(result.outcomes()).extracting(ScannerExecutionOutcome::scanner)
+                .containsExactly(ScannerType.SEMGREP, ScannerType.GITLEAKS, ScannerType.TRIVY);
+        assertThat(result.outcomes()).filteredOn(outcome -> outcome.scanner() == ScannerType.TRIVY)
+                .singleElement()
+                .satisfies(outcome -> {
+                    assertThat(outcome.status()).isEqualTo(ScannerExecutionStatus.FAILED);
+                    assertThat(outcome.failureCode()).isEqualTo(ScannerFailureCode.DATABASE_UNAVAILABLE);
+                    assertThat(outcome.toString()).doesNotContain("private database detail");
+                });
+    }
+
+    @Test
     @DisplayName("Keeps successful scanner findings when another scanner fails")
     void returnsPartialForOneScannerFailure() {
         CompositeScanExecutor executor = new CompositeScanExecutor(List.of(

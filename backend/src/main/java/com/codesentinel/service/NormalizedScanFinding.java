@@ -9,10 +9,10 @@ public record NormalizedScanFinding(
         ScanFindingSeverity severity,
         String message,
         String filePath,
-        int startLine,
-        int startColumn,
-        int endLine,
-        int endColumn,
+        Integer startLine,
+        Integer startColumn,
+        Integer endLine,
+        Integer endColumn,
         String scanner,
         Map<String, String> metadata) {
 

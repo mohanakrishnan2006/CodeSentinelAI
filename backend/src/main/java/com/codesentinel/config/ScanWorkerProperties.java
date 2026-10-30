@@ -21,6 +21,8 @@ public class ScanWorkerProperties {
             "semgrep/semgrep:[0-9]+\\.[0-9]+\\.[0-9]+-nonroot@sha256:[a-f0-9]{64}");
     private static final Pattern PINNED_GITLEAKS_IMAGE = Pattern.compile(
             "ghcr\\.io/gitleaks/gitleaks:v[0-9]+\\.[0-9]+\\.[0-9]+@sha256:[a-f0-9]{64}");
+    private static final Pattern PINNED_TRIVY_IMAGE = Pattern.compile(
+            "aquasec/trivy:[0-9]+\\.[0-9]+\\.[0-9]+@sha256:[a-f0-9]{64}");
 
     private boolean enabled;
 
@@ -63,6 +65,12 @@ public class ScanWorkerProperties {
     private String gitleaksImage =
             "ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f";
 
+    private String trivyImage =
+            "aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c";
+
+    private String trivyDatabaseDirectory =
+            Path.of(System.getProperty("user.home"), ".cache", "trivy").toString();
+
     private String temporaryDirectory =
             Path.of(System.getProperty("java.io.tmpdir"), "codesentinel-scan-worker").toString();
 
@@ -88,5 +96,11 @@ public class ScanWorkerProperties {
             "Gitleaks image must be pinned to an official version and digest")
     public boolean isGitleaksImagePinned() {
         return gitleaksImage != null && PINNED_GITLEAKS_IMAGE.matcher(gitleaksImage).matches();
+    }
+
+    @jakarta.validation.constraints.AssertTrue(message =
+            "Trivy image must be pinned to an official version and digest")
+    public boolean isTrivyImagePinned() {
+        return trivyImage != null && PINNED_TRIVY_IMAGE.matcher(trivyImage).matches();
     }
 }

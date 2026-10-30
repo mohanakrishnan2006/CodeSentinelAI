@@ -5,11 +5,13 @@ import com.codesentinel.model.Project;
 import com.codesentinel.model.ProjectUpload;
 import com.codesentinel.model.Role;
 import com.codesentinel.model.ScanFindingSeverity;
+import com.codesentinel.model.ScanFinding;
 import com.codesentinel.model.ScanRun;
 import com.codesentinel.model.ScanStatus;
 import com.codesentinel.model.UploadStatus;
 import com.codesentinel.model.User;
 import com.codesentinel.repository.ProjectRepository;
+import com.codesentinel.repository.ScanFindingRepository;
 import com.codesentinel.repository.ProjectUploadRepository;
 import com.codesentinel.repository.ScanOutcomeRepository;
 import com.codesentinel.repository.ScanRunRepository;
@@ -67,6 +69,8 @@ class ScanWorkerIntegrationTest {
     @Autowired
     private ScanOutcomeRepository scanOutcomeRepository;
     @Autowired
+    private ScanFindingRepository scanFindingRepository;
+    @Autowired
     private ScanRunRepository scanRunRepository;
     @Autowired
     private UserRepository userRepository;
@@ -85,6 +89,7 @@ class ScanWorkerIntegrationTest {
     @BeforeEach
     void setUp() throws IOException {
         reset(scanExecutor);
+        scanFindingRepository.deleteAll();
         scanOutcomeRepository.deleteAll();
         scanRunRepository.deleteAll();
         uploadRepository.deleteAll();
@@ -221,11 +226,52 @@ class ScanWorkerIntegrationTest {
         assertThat(completed.getTotalFindings()).isEqualTo(2);
         assertThat(completed.getHighCount()).isEqualTo(1);
         assertThat(completed.getMediumCount()).isEqualTo(1);
+        assertThat(scanFindingRepository.findAll()).hasSize(2)
+                .allSatisfy(finding ->
+                        assertThat(finding.getDescription()).doesNotContain("High finding", "Medium finding"));
         assertThat(scanOutcomeRepository.findAllByScanRun_IdOrderByScannerAsc(scan.getId()))
                 .singleElement()
                 .satisfies(outcome -> {
                     assertThat(outcome.getScanner()).isEqualTo(com.codesentinel.model.ScannerType.SEMGREP);
                     assertThat(outcome.getFindingCount()).isEqualTo(2);
+                });
+    }
+
+    @Test
+    @DisplayName("Deduplicates before persisting findings and never stores scanner messages")
+    void deduplicatesFindingsAndDropsRawScannerMessage() throws Exception {
+        ScanRun scan = createQueuedScan();
+        Files.createDirectories(STORAGE_DIRECTORY.resolve(upload.getStorageReference()));
+        String dummySecret = "dummy-only-not-real-secret";
+        NormalizedScanFinding duplicate = new NormalizedScanFinding(
+                "generic-api-key", ScanFindingSeverity.HIGH, "Found " + dummySecret,
+                "config.txt", 3, 1, 3, 10, "GITLEAKS", Map.of("match", dummySecret));
+        ScanBatchResult result = new ScanBatchResult(List.of(
+                duplicate,
+                new NormalizedScanFinding("generic-api-key", ScanFindingSeverity.HIGH,
+                        "A second raw message", "config.txt", 3, 1, 3, 10,
+                        "GITLEAKS", Map.of())),
+                List.of(new ScannerExecutionOutcome(
+                        com.codesentinel.model.ScannerType.GITLEAKS,
+                        com.codesentinel.model.ScannerExecutionStatus.SUCCEEDED, 2, null,
+                        Instant.now(), Instant.now())));
+        doReturn(result).when(scanExecutor).execute(any(ScanWorkItem.class));
+
+        assertThat(workerService.processNextScan()).isTrue();
+
+        ScanRun completed = scanRunRepository.findById(scan.getId()).orElseThrow();
+        assertThat(completed.getTotalFindings()).isEqualTo(1);
+        assertThat(completed.getHighCount()).isEqualTo(1);
+        assertThat(scanOutcomeRepository.findAllByScanRun_IdOrderByScannerAsc(scan.getId()))
+                .singleElement()
+                .extracting(com.codesentinel.model.ScanOutcome::getFindingCount)
+                .isEqualTo(1);
+        assertThat(scanFindingRepository.findAll())
+                .singleElement()
+                .satisfies(finding -> {
+                    assertThat(finding.getDescription())
+                            .isEqualTo("Potential exposed secret detected.");
+                    assertThat(finding.toString()).doesNotContain(dummySecret);
                 });
     }
 
@@ -329,8 +375,13 @@ class ScanWorkerIntegrationTest {
         assertThat(oldClaim.claimToken()).isNotEqualTo(newClaim.claimToken());
         assertThat(coordinator.renew(scan.getId(), newClaim.claimToken(), 60_000)).isTrue();
         assertThat(coordinator.renew(scan.getId(), oldClaim.claimToken(), 60_000)).isFalse();
-        assertThat(coordinator.complete(scan.getId(), oldClaim.claimToken(), ScanBatchResult.empty()))
+        NormalizedScanFinding finding = new NormalizedScanFinding(
+                "safe-rule", ScanFindingSeverity.HIGH, "Safe generic message",
+                "src/file.txt", 1, 1, 1, 2, "SEMGREP", Map.of());
+        assertThat(coordinator.complete(scan.getId(), oldClaim.claimToken(),
+                new ScanBatchResult(List.of(finding), List.of())))
                 .isFalse();
+        assertThat(scanFindingRepository.findAll()).isEmpty();
         assertThat(scanRunRepository.findById(scan.getId()).orElseThrow().getStatus())
                 .isEqualTo(ScanStatus.RUNNING);
     }

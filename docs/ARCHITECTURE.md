@@ -21,7 +21,7 @@
 |                                                                       | Spawns Scanner Processes / Containers      |
 |                                                                       v                                            |
 |                                                     +-----------------+------------------+                         |
-|                                                     | Static Scanners (Gitleaks, Semgrep)|                         |
+|                                                     | Static Scanners (Semgrep, Gitleaks, Trivy)|                                             |
 +-------------------+---------------------------------+-----------------+------------------+-------------------------+
                     |                                                   |
                     | JDBC / JPA (Spring Data JPA)                      | REST / JSON (Internal HTTP Client)
@@ -63,7 +63,7 @@
 - **Key Modules**:
   - `Security & Auth`: User authentication, BCrypt password hashing, JWT filter chain.
   - `Project Service`: Manages project lifecycle, safe ZIP extraction (`Zip Slip` prevention), and directory version trees.
-  - `Scan Orchestrator`: Executes Gitleaks and Semgrep CLI/containers on isolated project directories, parses JSON results, sanitizes detected secrets, and writes findings to PostgreSQL.
+  - `Scan Orchestrator`: Executes Semgrep, Gitleaks, and Trivy sequentially in isolated containers, validates and normalizes results, and stores safe finding fields in PostgreSQL.
   - `AI Gateway Service`: Coordinates with the Python AI microservice, passing masked snippets and retrieving structured explanations and diffs.
   - `Sandbox Orchestrator`: Interacts with Docker Engine via Docker CLI/API to spin up ephemeral test containers with strict resource caps.
   - `Report Service`: Assembles vulnerability and compliance data into formatted PDF documents using OpenPDF.
@@ -87,9 +87,10 @@
 - **Security Boundary**: Accepts **only pre-sanitized** code snippets with secrets already masked.
 
 ### 2.5 Security Scanners
-- **Gitleaks**: Scans source trees for exposed secrets (tokens, AWS keys, database URIs, passwords). It runs after Semgrep in the current scan pipeline. Its findings are normalized without retaining secret values or matches.
-- **Semgrep**: Lightweight, AST-based static analysis engine running OWASP Top 10, CWE Top 25, and secure coding rulesets.
-- **Trivy**: Scans project dependency manifests (`pom.xml`, `package.json`, `requirements.txt`) for known CVEs.
+- **Semgrep**: Runs first using the trusted ruleset and maps its severities to the application model.
+- **Gitleaks**: Runs after Semgrep to detect exposed secrets. Its findings are normalized without retaining secret values or matches and use application severity `HIGH`.
+- **Trivy**: Runs after Gitleaks to scan supported dependency manifests for known vulnerabilities. It uses the pinned official image `aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c`, an administrator-refreshed host vulnerability-database cache mounted read-only, and no scanner network access. `CRITICAL`, `HIGH`, `MEDIUM`, and `LOW` map directly; `UNKNOWN` and `NEGLIGIBLE` map to application severity `INFO`.
+- All scanner containers use read-only source mounts, a read-only container filesystem, a non-root UID/GID, dropped capabilities, no-new-privileges, and configured CPU, memory, process, output, and execution-time limits. Uploaded source code is not executed.
 
 ### 2.6 Isolated Docker Test Worker
 - **Role**: Safely executes untrusted test suites (`mvn test`, `pytest`, `npm test`).
@@ -227,20 +228,28 @@ The ER diagram below is the intended broader product model. In the current backe
   - `POST /projects/{projectId}/uploads/{uploadId}/scans`: Create a `QUEUED` scan request and return `202 Accepted`.
   - `GET /projects/{projectId}/uploads/{uploadId}/scans`: List scan requests for that owned upload.
   - `GET /scans/{scanId}`: Retrieve an owned scan request.
+  - `GET /scans/{scanId}/findings`: List findings for an owned scan, with optional exact `severity`, `scanner`, and relative `filePath` filters. Results are ordered consistently and paginated with a default size of 50 and maximum size of 100.
+  - `GET /findings/{findingId}`: Retrieve one finding only when its scan belongs to the authenticated user.
   - Scan records refer to one specific completed `ProjectUpload` snapshot. Responses contain IDs, status, timestamps, summary counters, and safe per-scanner outcome metadata only.
 - **Worker foundation**:
   - A separate host-side Java process can poll PostgreSQL when `codesentinel.scan-worker.enabled=true`; the API process leaves this disabled.
   - The worker atomically claims queued scans under a project row lock, validates the completed upload and resolves its UUID storage reference under the configured upload root.
-  - The development worker runs Semgrep first using the pinned official non-root image `semgrep/semgrep:1.182.1-nonroot@sha256:0ed16bbbb23e5bf7c442df9144704d74b54ad2d003094e09905130d642f22473`, then Gitleaks using `ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f`. Tests select a placeholder executor and never require Docker.
+  - The development worker runs Semgrep first using the pinned official non-root image `semgrep/semgrep:1.182.1-nonroot@sha256:0ed16bbbb23e5bf7c442df9144704d74b54ad2d003094e09905130d642f22473`, then Gitleaks using `ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f`, and finally Trivy using the pinned image above. Tests select a placeholder executor and never require Docker.
   - Each scanner stages the selected upload into bounded temporary storage, mounts the staged snapshot at `/src` read-only, and removes its temporary files and container after execution.
-  - Both scanners run with no network, a read-only container root, a non-root user, dropped capabilities, no-new-privileges, CPU/memory/process limits, and bounded output and execution time. They do not execute uploaded scripts or build steps.
+  - All scanners run with no network, a read-only container root, explicit non-root users, dropped capabilities, no-new-privileges, CPU/memory/process limits, and bounded output and execution time. Trivy also receives only the trusted vulnerability database cache mounted read-only. The scanners do not execute uploaded scripts or build steps.
   - A claim token prevents stale workers from updating a newer claim. A separate heartbeat renews active leases; expired leases are marked `FAILED`. The worker and backend must use the same PostgreSQL database and upload-storage directory.
-  - Per-scanner outcomes are persisted in the `scan_outcomes` table. They contain scanner identity, execution status, finding count, timestamps, and a controlled failure code; they do not contain raw scanner output or secrets. Semgrep severities map `CRITICAL` → `CRITICAL`, `ERROR` → `HIGH`, `WARNING` → `MEDIUM`, and `INFO` → `INFO`; Gitleaks findings map to application severity `HIGH`.
-  - Individual normalized findings are currently held in memory only: they are not persisted or exposed through a findings API. Raw scanner output, secret values, matches, and source snippets are not stored.
+  - Per-scanner outcomes are persisted in the `scan_outcomes` table. They contain scanner identity, execution status, deduplicated finding count, timestamps, and a controlled failure code; they do not contain raw scanner output or secrets.
+  - Validated individual findings are persisted in `scan_findings`. Stored fields are limited to scanner, rule ID, application severity, relative path, optional source coordinates, a generic scanner-specific description, a deterministic fingerprint, and creation time. A unique scan/fingerprint constraint prevents duplicate rows. Raw scanner messages, secret values, matches, source snippets, and raw JSON are not stored, logged, or returned.
+  - Findings APIs enforce scan ownership for both listing and detail retrieval. Filtering supports severity, scanner, and exact relative path. Result pages are bounded; returned descriptions are generic and do not contain scanner-provided messages.
+  - Trivy database updates are a separate administrative operation. The configured host cache must contain a valid, unexpired database before a scan; otherwise Trivy returns a controlled `DATABASE_UNAVAILABLE` outcome. Set `TRIVY_DATABASE_DIRECTORY` to the trusted cache root when it is not the default `${user.home}/.cache/trivy`. For a manual refresh, use the pinned image with network access only in this maintenance command, never in the scanner container:
+    ```powershell
+    New-Item -ItemType Directory -Force $env:TRIVY_DATABASE_DIRECTORY
+    docker run --rm --mount "type=bind,source=$env:TRIVY_DATABASE_DIRECTORY,target=/root/.cache/trivy" aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c --cache-dir /root/.cache/trivy image --download-db-only
+    docker run --rm --mount "type=bind,source=$env:TRIVY_DATABASE_DIRECTORY,target=/root/.cache/trivy" aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c --cache-dir /root/.cache/trivy image --download-java-db-only
+    ```
   - To run locally from `backend/`, package with `mvn package`, then start the API with `java -jar target/codesentinel-backend-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev`. In another terminal, start the worker with `java -jar target/codesentinel-backend-0.0.1-SNAPSHOT.jar --codesentinel.worker-process=true --codesentinel.scan-worker.enabled=true --spring.profiles.active=dev`.
 - **Planned, not yet implemented**:
   - `GET /projects/{projectId}/versions/{versionId}/report`: Retrieve scan report with calculated security score.
-  - Persist individual normalized findings and provide owner-scoped findings/report APIs, including severity filtering and safe presentation of detected secrets.
   - Calculate and expose a security score from persisted findings.
 
 ### 4.4 AI Explanations & Patch Management (`/api/v1/ai`)

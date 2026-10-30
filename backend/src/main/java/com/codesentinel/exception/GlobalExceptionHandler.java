@@ -67,6 +67,13 @@ public class GlobalExceptionHandler {
         return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(FindingNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleFindingNotFound(
+            FindingNotFoundException ex,
+            HttpServletRequest request) {
+        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(UploadNotReadyException.class)
     public ResponseEntity<ErrorResponse> handleUploadNotReady(
             UploadNotReadyException ex,

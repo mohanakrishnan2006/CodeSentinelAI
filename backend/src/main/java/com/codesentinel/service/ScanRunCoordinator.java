@@ -1,11 +1,15 @@
 package com.codesentinel.service;
 
 import com.codesentinel.model.ProjectUpload;
+import com.codesentinel.model.ScanFinding;
+import com.codesentinel.model.ScanFindingSeverity;
 import com.codesentinel.model.ScanOutcome;
 import com.codesentinel.model.ScanRun;
 import com.codesentinel.model.ScanStatus;
+import com.codesentinel.model.ScannerExecutionStatus;
 import com.codesentinel.model.UploadStatus;
 import com.codesentinel.repository.ProjectRepository;
+import com.codesentinel.repository.ScanFindingRepository;
 import com.codesentinel.repository.ScanOutcomeRepository;
 import com.codesentinel.repository.ScanRunRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,8 +27,10 @@ public class ScanRunCoordinator {
     private static final int MAX_CLAIM_ATTEMPTS = 10;
 
     private final ScanRunRepository scanRunRepository;
+    private final ScanFindingRepository scanFindingRepository;
     private final ScanOutcomeRepository scanOutcomeRepository;
     private final ProjectRepository projectRepository;
+    private final ScanFindingMapper scanFindingMapper;
 
     @Transactional
     public Optional<ClaimedScan> claimNext(long leaseTimeoutMs) {
@@ -83,6 +89,8 @@ public class ScanRunCoordinator {
 
     @Transactional
     public boolean complete(UUID scanId, UUID claimToken, ScanBatchResult result) {
+        ScanRun scanRun = scanRunRepository.getReferenceById(scanId);
+        var findings = scanFindingMapper.toEntities(scanRun, result.findings());
         Instant completedAt = Instant.now();
         int updated = scanRunRepository.completeRunningScan(
                 scanId,
@@ -90,28 +98,43 @@ public class ScanRunCoordinator {
                 result.status(),
                 completedAt,
                 claimToken,
-                result.totalFindings(),
-                Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.CRITICAL)),
-                Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.HIGH)),
-                Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.MEDIUM)),
-                Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.LOW)),
-                Math.toIntExact(result.count(com.codesentinel.model.ScanFindingSeverity.INFO)));
+                findings.size(),
+                count(findings, ScanFindingSeverity.CRITICAL),
+                count(findings, ScanFindingSeverity.HIGH),
+                count(findings, ScanFindingSeverity.MEDIUM),
+                count(findings, ScanFindingSeverity.LOW),
+                count(findings, ScanFindingSeverity.INFO));
         if (updated != 1) {
             return false;
         }
-        ScanRun scanRun = scanRunRepository.getReferenceById(scanId);
+        ScanRun completedScanRun = scanRunRepository.getReferenceById(scanId);
+        findings.forEach(finding -> finding.setScanRun(completedScanRun));
+        scanFindingRepository.saveAll(findings);
         scanOutcomeRepository.saveAll(result.outcomes().stream()
                 .map(outcome -> ScanOutcome.builder()
-                        .scanRun(scanRun)
+                        .scanRun(completedScanRun)
                         .scanner(outcome.scanner())
                         .status(outcome.status())
-                        .findingCount(outcome.findingCount())
+                        .findingCount(outcome.status() == ScannerExecutionStatus.SUCCEEDED
+                                ? count(findings, outcome.scanner()) : 0)
                         .failureCode(outcome.failureCode())
                         .startedAt(outcome.startedAt())
                         .completedAt(outcome.completedAt())
                         .build())
                 .toList());
         return true;
+    }
+
+    private int count(java.util.List<ScanFinding> findings, ScanFindingSeverity severity) {
+        return Math.toIntExact(findings.stream()
+                .filter(finding -> finding.getSeverity() == severity)
+                .count());
+    }
+
+    private int count(java.util.List<ScanFinding> findings, com.codesentinel.model.ScannerType scanner) {
+        return Math.toIntExact(findings.stream()
+                .filter(finding -> finding.getScanner() == scanner)
+                .count());
     }
 
     @Transactional

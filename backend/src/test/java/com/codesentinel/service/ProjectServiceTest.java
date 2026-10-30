@@ -9,6 +9,7 @@ import com.codesentinel.model.ScanStatus;
 import com.codesentinel.model.User;
 import com.codesentinel.repository.ProjectRepository;
 import com.codesentinel.repository.ProjectUploadRepository;
+import com.codesentinel.repository.ScanFindingRepository;
 import com.codesentinel.repository.ScanOutcomeRepository;
 import com.codesentinel.repository.ScanRunRepository;
 import com.codesentinel.repository.UserRepository;
@@ -49,6 +50,9 @@ class ProjectServiceTest {
 
     @Mock
     private ScanOutcomeRepository scanOutcomeRepository;
+
+    @Mock
+    private ScanFindingRepository scanFindingRepository;
 
     @Mock
     private UploadStorageService uploadStorageService;

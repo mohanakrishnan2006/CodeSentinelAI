@@ -6,6 +6,8 @@ import com.codesentinel.model.Role;
 import com.codesentinel.model.ScanRun;
 import com.codesentinel.model.ScanStatus;
 import com.codesentinel.model.ScanOutcome;
+import com.codesentinel.model.ScanFinding;
+import com.codesentinel.model.ScanFindingSeverity;
 import com.codesentinel.model.ScannerExecutionStatus;
 import com.codesentinel.model.ScannerType;
 import com.codesentinel.model.UploadStatus;
@@ -13,6 +15,7 @@ import com.codesentinel.model.User;
 import com.codesentinel.repository.ProjectRepository;
 import com.codesentinel.repository.ProjectUploadRepository;
 import com.codesentinel.repository.ScanOutcomeRepository;
+import com.codesentinel.repository.ScanFindingRepository;
 import com.codesentinel.repository.ScanRunRepository;
 import com.codesentinel.repository.UserRepository;
 import com.codesentinel.service.ScanRunCoordinator;
@@ -69,6 +72,8 @@ class ScanControllerTest {
     @Autowired
     private ScanOutcomeRepository scanOutcomeRepository;
     @Autowired
+    private ScanFindingRepository scanFindingRepository;
+    @Autowired
     private ScanRunCoordinator scanRunCoordinator;
 
     private UUID ownerProjectId;
@@ -84,6 +89,7 @@ class ScanControllerTest {
 
     @BeforeEach
     void setUp() throws IOException {
+        scanFindingRepository.deleteAll();
         scanOutcomeRepository.deleteAll();
         scanRunRepository.deleteAll();
         uploadRepository.deleteAll();
@@ -219,6 +225,15 @@ class ScanControllerTest {
     void deletingProjectWithQueuedScanCleansUp() throws Exception {
         ProjectUpload upload = saveOwnedUpload();
         ScanRun scan = saveScan(upload);
+        scanFindingRepository.save(ScanFinding.builder()
+                .scanRun(scan)
+                .scanner(ScannerType.SEMGREP)
+                .severity(ScanFindingSeverity.HIGH)
+                .ruleId("safe-rule")
+                .filePath("src/Main.java")
+                .description("Static analysis finding detected.")
+                .fingerprint(UUID.randomUUID().toString().replace("-", "").repeat(2))
+                .build());
         scanOutcomeRepository.save(ScanOutcome.builder()
                 .scanRun(scan)
                 .scanner(ScannerType.GITLEAKS)
@@ -233,6 +248,7 @@ class ScanControllerTest {
                 .andExpect(status().isNoContent());
 
         assertThat(scanRunRepository.findById(scan.getId())).isEmpty();
+        assertThat(scanFindingRepository.findAll()).isEmpty();
         assertThat(scanOutcomeRepository.findAllByScanRun_IdOrderByScannerAsc(scan.getId())).isEmpty();
         assertThat(uploadRepository.findById(upload.getId())).isEmpty();
         assertThat(projectRepository.findById(ownerProjectId)).isEmpty();
