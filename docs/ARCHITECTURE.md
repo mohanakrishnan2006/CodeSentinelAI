@@ -24,14 +24,14 @@
 |                                                     | Static Scanners (Semgrep, Gitleaks, Trivy)|                                             |
 +-------------------+---------------------------------+-----------------+------------------+-------------------------+
                     |                                                   |
-                    | JDBC / JPA (Spring Data JPA)                                          | REST / JSON (future backend integration)
+                    | JDBC / JPA (Spring Data JPA)                                          | REST / JSON (backend integration planned)
                     v                                                   v
 +-------------------+--------------+                  +-----------------+--------------------------------------------+
-|        PostgreSQL Database       |                  | Python FastAPI AI Service (health foundation implemented)    |
+|        PostgreSQL Database       |                  | Python FastAPI AI Service (analysis API implemented)         |
 |                                  |                  |                                                              |
 | - Users & Roles                  |                  |  +------------------------+    +--------------------------+  |
-| - Projects & Versions            |                  |  | Planned RAG / Embedding|    | Ollama availability     |  |
-| - Vulnerabilities & Secrets      |                  |  | (LangChain + ChromaDB) |    | check (HTTPX)           |  |
+| - Projects & Versions            |                  |  | Planned RAG / Embedding|    | Health + analysis API   |  |
+| - Vulnerabilities & Secrets      |                  |  | (LangChain + ChromaDB) |    | (HTTPX + Ollama)        |  |
 | - Code Fixes & Reviews           |                  |  +------------------------+    +--------------------------+  |
 | - Test Logs & Audit Records      |                  +--------------------------------------------------------------+
 +----------------------------------+                                    |
@@ -77,13 +77,15 @@
 - **Integrity**: Enforces ACID compliance, foreign-key constraints, cascading deletes where appropriate, and unique indexing on emails and project paths.
 
 ### 2.4 Python FastAPI AI Microservice
-- **Role**: Separate Python service foundation for future local LLM-powered analysis.
-- **Implemented foundation**:
+- **Role**: Separate Python service for local LLM-powered finding explanations.
+- **Implemented**:
   - **FastAPI + Pydantic Settings**: Provides typed health endpoints and reads configuration from environment variables or the service-local `.env`.
   - **Ollama availability check**: Uses HTTPX with connection/request timeouts to query `/api/tags` and check for the configured model. It does not download the model.
   - `GET /health` reports service health; `GET /health/ollama` reports model availability or returns a controlled `503 Service Unavailable` response without exposing internal errors or configuration.
+  - `POST /api/v1/analyze` accepts bounded normalized findings and returns validated explanations, remediation advice, and an optional illustrative fix. Ollama configuration is server-controlled; submitted or generated code is never executed.
+  - Gitleaks finding text and metadata are excluded from Ollama prompts; common credential patterns in other untrusted text and generated responses are redacted. Request and generated response sizes are bounded.
   - Tests mock HTTPX responses and require neither Ollama nor internet access.
-- **Not implemented in this milestone**: code analysis/generation endpoints, Spring Boot integration, RAG, code chunking, ChromaDB, LangChain, or AI-generated fixes. Future code-analysis endpoints must accept only pre-sanitized inputs with secrets already masked.
+- **Not implemented in this milestone**: Spring Boot integration, RAG, code chunking, ChromaDB, LangChain, persistence, or frontend. The analysis endpoint returns advisory fixes only and does not apply or execute them.
 
 ### 2.5 Security Scanners
 - **Semgrep**: Runs first using the trusted ruleset and maps its severities to the application model.

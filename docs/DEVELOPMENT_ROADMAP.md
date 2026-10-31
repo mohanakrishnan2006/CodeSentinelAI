@@ -12,7 +12,7 @@ This document establishes the step-by-step implementation plan for CodeSentinel 
 | **Phase 1** | **Backend Foundation & Auth** | Spring Boot 3, PostgreSQL, Spring Security, JWT, User entity. | User registration/login tests passing, JWT validated. |
 | **Phase 2** | **Project & Secure Ingestion** | Projects, Versions, ZIP file upload, `Zip Slip` prevention. | Upload sample ZIP, verify safe extraction and DB records. |
 | **Phase 3** | **Static Security Scanners** | Scan management, isolated Semgrep/Gitleaks/Trivy integration, safe per-scanner outcomes, findings persistence, and owner-scoped findings APIs. | Verify scanner outcomes, persisted safe findings, ownership isolation, and Docker security controls. |
-| **Phase 4** | **AI Microservice & Ollama** | Python 3.12 FastAPI foundation, health endpoints, and safe Ollama/model availability checks. | Automated mocked tests cover healthy, unavailable, and missing-model responses without Ollama or internet. |
+| **Phase 4** | **AI Microservice & Ollama** | Python 3.12 FastAPI foundation, health endpoints, and validated finding-analysis API backed by configured local Ollama. | Mocked tests cover health, analysis, validation, redaction, unavailable Ollama, malformed output, and limits without internet. |
 | **Phase 5** | **RAG & Code Fixes** | LangChain, ChromaDB, code chunking, unified diffs, patch applier. | Context-aware patch generated and applied, creating `v2`. |
 | **Phase 6** | **Frontend SPA** | React, Tailwind CSS, Monaco/Diff viewer, Scan Dashboard. | User can log in, upload code, view scan findings and diffs in UI. |
 | **Phase 7** | **Docker Test Sandbox** | Isolated Docker containers (`--network none`, resource limits). | Untrusted tests run safely in sandbox; logs streamed to backend. |
@@ -86,7 +86,7 @@ This document establishes the step-by-step implementation plan for CodeSentinel 
 ---
 
 ### Phase 4: AI Microservice & Local Ollama Integration
-- **Objective**: Build the Python 3.12 FastAPI service foundation and safely verify local Ollama/model availability before adding analysis features.
+- **Objective**: Provide a separate Python 3.12 FastAPI service for safe, schema-validated static finding explanations using local Ollama.
 - **Milestone 2.1 — AI Microservice Foundation (implemented)**:
   - Separate `ai-service/` application using FastAPI, Pydantic Settings, Uvicorn, HTTPX, and Pytest.
   - `GET /health` reports the service name and health status.
@@ -94,13 +94,17 @@ This document establishes the step-by-step implementation plan for CodeSentinel 
   - Ollama connectivity failures and missing models return controlled `503` responses. Model downloads are never initiated automatically.
   - Tests use mocked HTTPX transports and do not require Ollama or internet access.
   - Windows PowerShell setup and start instructions are in `ai-service/README.md`.
+- **Milestone 2.2 — AI Analysis API (implemented)**:
+  - `POST /api/v1/analyze` accepts the Java backend's normalized finding fields with bounded input and optional snippet limits.
+  - Uses only the configured Ollama URL/model and its structured JSON generation API; response fields are validated before returning.
+  - Gitleaks message/metadata/snippet values are never sent to Ollama; common credential patterns are redacted from other inputs and generated fields.
+  - Ollama calls have configured generation timeout/token limits, bounded response size, and controlled error responses. Submitted and generated code is never executed.
 - **Future Phase 4 work**:
-  - Add carefully scoped, typed code-analysis request and response models and prompts.
-  - Integrate the Spring Boot backend with the AI service after the service API is defined.
-  - Add explanation generation only; RAG, ChromaDB, LangChain, and AI-generated fixes are separate later milestones.
+  - Integrate the Spring Boot backend with the AI service and define service-to-service authentication.
+  - RAG, ChromaDB, LangChain, persistence, frontend, and applying generated fixes remain separate future work.
 - **Verification Milestone**:
   - Run the service Pytest suite with Python 3.12.
-  - Verify health, successful Ollama connectivity, unavailable Ollama, and missing configured model using mocked HTTPX responses.
+  - Verify health and Ollama availability plus analysis success, validation, redaction, timeouts, unavailable Ollama, malformed output, and request/response limits using mocked HTTPX responses.
 
 ---
 

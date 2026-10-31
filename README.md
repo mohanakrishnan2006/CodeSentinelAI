@@ -29,7 +29,7 @@ Java 21 Spring Boot Main Backend
       ├── Static Scanners (Gitleaks, Semgrep CLI)
       ├── Isolated Docker Test Workers (--network none, 512MB RAM)
       └── Python 3.12 FastAPI AI Service
-            ├── Ollama availability check (HTTPX)
+            ├── Finding analysis API (HTTPX + Ollama)
             └── Planned RAG / ChromaDB integration
 ```
 
@@ -52,7 +52,7 @@ Detailed architecture blueprints and guides are available in the [`docs/`](docs/
 | **Main Backend** | Java 21 LTS, Spring Boot 3, Maven, Spring Security (JWT), Spring Data JPA, Hibernate |
 | **Database** | PostgreSQL 16 |
 | **AI Microservice** | Python 3.12, FastAPI, Pydantic Settings, Uvicorn, HTTPX |
-| **Local AI & RAG** | Ollama (`qwen2.5-coder:3b`) availability foundation; ChromaDB/LangChain planned |
+| **Local AI & RAG** | Local Ollama (`qwen2.5-coder:3b`) powers finding analysis; ChromaDB/LangChain planned |
 | **Security Scanners** | Gitleaks, Semgrep, Trivy |
 | **Sandboxing & Testing** | Docker (`--network none`), JUnit 5, Pytest |
 | **Reports** | OpenPDF / iText |
@@ -67,8 +67,8 @@ We are developing CodeSentinel AI incrementally following our review-driven work
 - [x] **Phase 1**: Backend Foundation, Authentication & Database Design
 - [x] **Phase 2**: Project Management & Secure File Ingestion
 - [x] **Phase 3**: Static Security Scanners Pipeline
-- [x] **Phase 4, Milestone 2.1**: AI Microservice Foundation (FastAPI and Ollama health checks)
-- [ ] **Phase 4**: Structured AI Code Analysis Integration
+- [x] **Phase 4, Milestones 2.1–2.2**: AI Microservice Foundation and Finding Analysis API
+- [ ] **Phase 4**: Spring Boot Integration with the AI Service
 - [ ] **Phase 5**: RAG Pipeline & Context-Aware Code Fixes
 - [ ] **Phase 6**: Frontend Single Page Application
 - [ ] **Phase 7**: Docker Isolated Testing Sandbox

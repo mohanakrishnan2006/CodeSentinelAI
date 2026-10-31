@@ -65,12 +65,16 @@ def test_settings_read_configuration_from_environment(monkeypatch: pytest.Monkey
     monkeypatch.setenv("APP_NAME", "Configured AI Service")
     monkeypatch.setenv("PORT", "8123")
     monkeypatch.setenv("OLLAMA_MODEL", "qwen2.5-coder:3b")
+    monkeypatch.setenv("OLLAMA_GENERATION_TIMEOUT_SECONDS", "90")
+    monkeypatch.setenv("OLLAMA_ANALYSIS_NUM_PREDICT", "256")
 
     settings = Settings(_env_file=None)
 
     assert settings.app_name == "Configured AI Service"
     assert settings.port == 8123
     assert settings.ollama_model == "qwen2.5-coder:3b"
+    assert settings.ollama_generation_timeout_seconds == 90
+    assert settings.ollama_analysis_num_predict == 256
 
 
 def test_settings_reject_credentials_in_ollama_url() -> None:

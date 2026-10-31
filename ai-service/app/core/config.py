@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5-coder:3b"
     ollama_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+    ollama_generation_timeout_seconds: float = Field(default=120.0, gt=0, le=300)
+    ollama_analysis_num_predict: int = Field(default=512, ge=64, le=1024)
 
     @field_validator("ollama_base_url")
     @classmethod
