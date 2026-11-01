@@ -2,8 +2,10 @@ package com.codesentinel.controller;
 
 import com.codesentinel.dto.ScanFindingPageResponse;
 import com.codesentinel.dto.ScanFindingResponse;
+import com.codesentinel.dto.FindingAnalysisResponse;
 import com.codesentinel.model.ScanFindingSeverity;
 import com.codesentinel.model.ScannerType;
+import com.codesentinel.service.ScanFindingAnalysisService;
 import com.codesentinel.service.ScanFindingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -24,6 +26,7 @@ import java.util.UUID;
 public class ScanFindingController {
 
     private final ScanFindingService scanFindingService;
+    private final ScanFindingAnalysisService analysisService;
 
     @GetMapping("/scans/{scanId}/findings")
     @ResponseStatus(HttpStatus.OK)
@@ -45,5 +48,21 @@ public class ScanFindingController {
             @PathVariable UUID findingId,
             @AuthenticationPrincipal UserDetails currentUser) {
         return scanFindingService.get(findingId, currentUser.getUsername());
+    }
+
+    @org.springframework.web.bind.annotation.PostMapping("/findings/{findingId}/analyze")
+    @ResponseStatus(HttpStatus.OK)
+    public FindingAnalysisResponse analyze(
+            @PathVariable UUID findingId,
+            @AuthenticationPrincipal UserDetails currentUser) {
+        return analysisService.analyze(findingId, currentUser.getUsername());
+    }
+
+    @GetMapping("/findings/{findingId}/analysis")
+    @ResponseStatus(HttpStatus.OK)
+    public FindingAnalysisResponse getAnalysis(
+            @PathVariable UUID findingId,
+            @AuthenticationPrincipal UserDetails currentUser) {
+        return analysisService.get(findingId, currentUser.getUsername());
     }
 }

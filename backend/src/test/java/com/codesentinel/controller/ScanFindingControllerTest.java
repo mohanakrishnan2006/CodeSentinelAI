@@ -4,6 +4,9 @@ import com.codesentinel.model.Project;
 import com.codesentinel.model.ProjectUpload;
 import com.codesentinel.model.Role;
 import com.codesentinel.model.ScanFinding;
+import com.codesentinel.model.ScanFindingAnalysis;
+import com.codesentinel.model.ScanFindingAnalysisFailureCode;
+import com.codesentinel.model.ScanFindingAnalysisStatus;
 import com.codesentinel.model.ScanFindingSeverity;
 import com.codesentinel.model.ScanRun;
 import com.codesentinel.model.ScanStatus;
@@ -13,9 +16,17 @@ import com.codesentinel.model.User;
 import com.codesentinel.repository.ProjectRepository;
 import com.codesentinel.repository.ProjectUploadRepository;
 import com.codesentinel.repository.ScanFindingRepository;
+import com.codesentinel.repository.ScanFindingAnalysisRepository;
 import com.codesentinel.repository.ScanOutcomeRepository;
 import com.codesentinel.repository.ScanRunRepository;
 import com.codesentinel.repository.UserRepository;
+import com.codesentinel.service.AiAnalysisClient;
+import com.codesentinel.service.ProjectService;
+import com.codesentinel.dto.ai.AiAnalysisRequest;
+import com.codesentinel.dto.ai.AiAnalysisResponse;
+import com.codesentinel.dto.ai.AiIllustrativeFix;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,10 +38,24 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.UUID;
+import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -45,6 +70,8 @@ class ScanFindingControllerTest {
     @Autowired
     private MockMvc mockMvc;
     @Autowired
+    private ObjectMapper objectMapper;
+    @Autowired
     private UserRepository userRepository;
     @Autowired
     private ProjectRepository projectRepository;
@@ -56,13 +83,21 @@ class ScanFindingControllerTest {
     private ScanOutcomeRepository scanOutcomeRepository;
     @Autowired
     private ScanFindingRepository scanFindingRepository;
+    @Autowired
+    private ScanFindingAnalysisRepository analysisRepository;
+    @Autowired
+    private ProjectService projectService;
+    @MockBean
+    private AiAnalysisClient aiAnalysisClient;
 
     private UUID ownedScanId;
     private UUID otherScanId;
     private UUID ownedFindingId;
+    private UUID ownedProjectId;
 
     @BeforeEach
     void setUp() {
+        analysisRepository.deleteAll();
         scanFindingRepository.deleteAll();
         scanOutcomeRepository.deleteAll();
         scanRunRepository.deleteAll();
@@ -72,7 +107,9 @@ class ScanFindingControllerTest {
 
         User owner = saveUser(OWNER_EMAIL);
         User other = saveUser(OTHER_EMAIL);
-        ScanRun ownedScan = saveScan(saveUpload(saveProject(owner, "Owned project")));
+        var ownedProject = saveProject(owner, "Owned project");
+        ownedProjectId = ownedProject.getId();
+        ScanRun ownedScan = saveScan(saveUpload(ownedProject));
         ScanRun otherScan = saveScan(saveUpload(saveProject(other, "Other project")));
         ownedScanId = ownedScan.getId();
         otherScanId = otherScan.getId();
@@ -83,6 +120,7 @@ class ScanFindingControllerTest {
                 "java.lang.security", "src/Main.java", "Static analysis finding detected.");
         saveFinding(otherScan, ScannerType.GITLEAKS, ScanFindingSeverity.HIGH,
                 "generic-api-key", "config.txt", "Potential exposed secret detected.");
+        clearInvocations(aiAnalysisClient);
     }
 
     @Test
@@ -148,6 +186,189 @@ class ScanFindingControllerTest {
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/v1/findings/{findingId}", ownedFindingId))
                 .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/findings/{findingId}/analyze", ownedFindingId))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/findings/{findingId}/analysis", ownedFindingId))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(username = OWNER_EMAIL)
+    @DisplayName("Analyzes and persists an owned finding using only normalized safe fields")
+    void analyzesAndPersistsOwnedFinding() throws Exception {
+        when(aiAnalysisClient.analyze(any(AiAnalysisRequest.class))).thenReturn(successfulAnalysis());
+
+        mockMvc.perform(post("/api/v1/findings/{findingId}/analyze", ownedFindingId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.findingId", is(ownedFindingId.toString())))
+                .andExpect(jsonPath("$.status", is("COMPLETED")))
+                .andExpect(jsonPath("$.explanation", is("A dependency has a known vulnerability.")))
+                .andExpect(jsonPath("$.illustrativeFix.language", is("xml")))
+                .andExpect(jsonPath("$.failureCode").doesNotExist());
+
+        var requestCaptor = org.mockito.ArgumentCaptor.forClass(AiAnalysisRequest.class);
+        verify(aiAnalysisClient).analyze(requestCaptor.capture());
+        AiAnalysisRequest request = requestCaptor.getValue();
+        assertThat(request.ruleId()).isEqualTo("CVE-2025-1000");
+        assertThat(request.message()).isEqualTo("Dependency vulnerability detected.");
+        assertThat(request.filePath()).isEqualTo("pom.xml");
+        assertThat(request.scanner()).isEqualTo("TRIVY");
+        assertThat(request.metadata()).isEmpty();
+        assertThat(objectMapper.writeValueAsString(request)).doesNotContain("snippet");
+        assertThat(analysisRepository.findByFindingId(ownedFindingId)).isPresent();
+    }
+
+    @Test
+    @WithMockUser(username = OWNER_EMAIL)
+    @DisplayName("Gitleaks analysis sends the generic persisted description, never matched secret data")
+    void gitleaksAnalysisUsesOnlySafePersistedFields() throws Exception {
+        ScanFinding gitleaksFinding = saveFinding(
+                scanRunRepository.findById(ownedScanId).orElseThrow(),
+                ScannerType.GITLEAKS,
+                ScanFindingSeverity.HIGH,
+                "generic-api-key",
+                "config.txt",
+                "Potential exposed secret detected.");
+        when(aiAnalysisClient.analyze(any(AiAnalysisRequest.class))).thenReturn(successfulAnalysis());
+
+        mockMvc.perform(post("/api/v1/findings/{findingId}/analyze", gitleaksFinding.getId()))
+                .andExpect(status().isOk());
+
+        var requestCaptor = org.mockito.ArgumentCaptor.forClass(AiAnalysisRequest.class);
+        verify(aiAnalysisClient).analyze(requestCaptor.capture());
+        AiAnalysisRequest request = requestCaptor.getValue();
+        assertThat(request.message()).isEqualTo("Potential exposed secret detected.");
+        assertThat(request.metadata()).isEmpty();
+        assertThat(objectMapper.writeValueAsString(request))
+                .doesNotContain("secret-value", "match", "snippet");
+    }
+
+    @Test
+    @WithMockUser(username = OWNER_EMAIL)
+    @DisplayName("Reuses a completed analysis without another Python request")
+    void reusesCompletedAnalysis() throws Exception {
+        when(aiAnalysisClient.analyze(any(AiAnalysisRequest.class))).thenReturn(successfulAnalysis());
+
+        mockMvc.perform(post("/api/v1/findings/{findingId}/analyze", ownedFindingId))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/findings/{findingId}/analyze", ownedFindingId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("COMPLETED")));
+
+        verify(aiAnalysisClient, times(1)).analyze(any(AiAnalysisRequest.class));
+        mockMvc.perform(get("/api/v1/findings/{findingId}/analysis", ownedFindingId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.recommendedRemediation", is("Upgrade to a fixed version.")));
+    }
+
+    @Test
+    @WithMockUser(username = OWNER_EMAIL)
+    @DisplayName("Foreign and missing findings are rejected before calling Python")
+    void doesNotAnalyzeForeignOrMissingFindings() throws Exception {
+        UUID foreignFindingId = scanFindingRepository.findAll().stream()
+                .filter(finding -> finding.getScanRun().getId().equals(otherScanId))
+                .findFirst().orElseThrow().getId();
+
+        mockMvc.perform(post("/api/v1/findings/{findingId}/analyze", foreignFindingId))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/v1/findings/{findingId}/analyze", UUID.randomUUID()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/findings/{findingId}/analysis", foreignFindingId))
+                .andExpect(status().isNotFound());
+        verify(aiAnalysisClient, never()).analyze(any(AiAnalysisRequest.class));
+    }
+
+    @Test
+    @WithMockUser(username = OWNER_EMAIL)
+    @DisplayName("A failed analysis can be retried within the configured attempt limit")
+    void retriesFailedAnalysis() throws Exception {
+        when(aiAnalysisClient.analyze(any(AiAnalysisRequest.class)))
+                .thenThrow(new com.codesentinel.exception.AiIntegrationException(
+                        org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                        ScanFindingAnalysisFailureCode.AI_SERVICE_UNAVAILABLE,
+                        "The AI analysis service is unavailable"))
+                .thenReturn(successfulAnalysis());
+
+        mockMvc.perform(post("/api/v1/findings/{findingId}/analyze", ownedFindingId))
+                .andExpect(status().isServiceUnavailable());
+        assertThat(analysisRepository.findByFindingId(ownedFindingId).orElseThrow().getAttemptCount())
+                .isEqualTo(1);
+        mockMvc.perform(post("/api/v1/findings/{findingId}/analyze", ownedFindingId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attemptCount", is(2)));
+    }
+
+    @Test
+    @WithMockUser(username = OWNER_EMAIL)
+    @DisplayName("A recent pending analysis conflicts and a stale one can be safely reclaimed")
+    void handlesPendingAndStaleAnalysis() throws Exception {
+        ScanFinding finding = scanFindingRepository.findById(ownedFindingId).orElseThrow();
+        analysisRepository.saveAndFlush(pendingAnalysis(finding, Instant.now(), 1));
+        mockMvc.perform(post("/api/v1/findings/{findingId}/analyze", ownedFindingId))
+                .andExpect(status().isConflict());
+        verify(aiAnalysisClient, never()).analyze(any(AiAnalysisRequest.class));
+
+        analysisRepository.deleteAll();
+        analysisRepository.saveAndFlush(pendingAnalysis(
+                finding, Instant.now().minusSeconds(600), 1));
+        when(aiAnalysisClient.analyze(any(AiAnalysisRequest.class))).thenReturn(successfulAnalysis());
+        mockMvc.perform(post("/api/v1/findings/{findingId}/analyze", ownedFindingId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attemptCount", is(2)));
+    }
+
+    @Test
+    @DisplayName("Concurrent analysis requests allow only one outbound AI call")
+    void preventsConcurrentDuplicateRequests() throws Exception {
+        CountDownLatch requestStarted = new CountDownLatch(1);
+        CountDownLatch allowCompletion = new CountDownLatch(1);
+        var executor = Executors.newSingleThreadExecutor();
+        when(aiAnalysisClient.analyze(any(AiAnalysisRequest.class))).thenAnswer(invocation -> {
+            requestStarted.countDown();
+            if (!allowCompletion.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Test did not release the mocked AI request");
+            }
+            return successfulAnalysis();
+        });
+
+        try {
+            var firstRequest = executor.submit(() -> mockMvc.perform(
+                            post("/api/v1/findings/{findingId}/analyze", ownedFindingId)
+                                    .with(user(OWNER_EMAIL)))
+                    .andReturn());
+            assertThat(requestStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            mockMvc.perform(post("/api/v1/findings/{findingId}/analyze", ownedFindingId)
+                            .with(user(OWNER_EMAIL)))
+                    .andExpect(status().isConflict());
+            allowCompletion.countDown();
+            assertThat(firstRequest.get(10, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(200);
+            verify(aiAnalysisClient, times(1)).analyze(any(AiAnalysisRequest.class));
+        } finally {
+            allowCompletion.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    @WithMockUser(username = OWNER_EMAIL)
+    @DisplayName("Database uniqueness prevents multiple analysis rows for a finding")
+    void enforcesUniqueAnalysisPerFinding() {
+        ScanFinding finding = scanFindingRepository.findById(ownedFindingId).orElseThrow();
+        analysisRepository.saveAndFlush(pendingAnalysis(finding, Instant.now(), 1));
+
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                () -> analysisRepository.saveAndFlush(pendingAnalysis(finding, Instant.now(), 1)));
+    }
+
+    @Test
+    @WithMockUser(username = OWNER_EMAIL)
+    @DisplayName("Project deletion removes analysis records before bulk-deleting findings")
+    void projectDeletionCleansUpAnalyses() {
+        ScanFinding finding = scanFindingRepository.findById(ownedFindingId).orElseThrow();
+        analysisRepository.saveAndFlush(pendingAnalysis(finding, Instant.now(), 1));
+        projectService.delete(ownedProjectId, OWNER_EMAIL);
+        assertThat(analysisRepository.findByFindingId(ownedFindingId)).isEmpty();
+        assertThat(scanFindingRepository.findById(ownedFindingId)).isEmpty();
     }
 
     private User saveUser(String email) {
@@ -193,5 +414,25 @@ class ScanFindingControllerTest {
                 .description(description)
                 .fingerprint(UUID.randomUUID().toString().replace("-", "").repeat(2))
                 .build());
+    }
+
+    private AiAnalysisResponse successfulAnalysis() {
+        return new AiAnalysisResponse(
+                "A dependency has a known vulnerability.",
+                "An attacker may exploit the vulnerable dependency.",
+                "Upgrade to a fixed version.",
+                new AiIllustrativeFix("xml", "<dependency>updated-version</dependency>"));
+    }
+
+    private ScanFindingAnalysis pendingAnalysis(ScanFinding finding, Instant updatedAt, int attempts) {
+        Instant createdAt = Instant.now().minusSeconds(600);
+        return ScanFindingAnalysis.builder()
+                .finding(finding)
+                .status(ScanFindingAnalysisStatus.PENDING)
+                .attemptCount(attempts)
+                .claimToken(UUID.randomUUID())
+                .createdAt(createdAt)
+                .updatedAt(updatedAt)
+                .build();
     }
 }

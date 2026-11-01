@@ -11,6 +11,7 @@ import com.codesentinel.model.User;
 import com.codesentinel.repository.ProjectRepository;
 import com.codesentinel.repository.ProjectUploadRepository;
 import com.codesentinel.repository.ScanFindingRepository;
+import com.codesentinel.repository.ScanFindingAnalysisRepository;
 import com.codesentinel.repository.ScanOutcomeRepository;
 import com.codesentinel.repository.ScanRunRepository;
 import com.codesentinel.repository.UserRepository;
@@ -36,6 +37,7 @@ public class ProjectService {
     private final ProjectRepository projectRepository;
     private final ProjectUploadRepository uploadRepository;
     private final ScanFindingRepository scanFindingRepository;
+    private final ScanFindingAnalysisRepository scanFindingAnalysisRepository;
     private final ScanOutcomeRepository scanOutcomeRepository;
     private final ScanRunRepository scanRunRepository;
     private final UserRepository userRepository;
@@ -89,6 +91,7 @@ public class ProjectService {
         List<ProjectUpload> uploads = uploadRepository.findAllForOwnedProject(projectId, owner.getId());
         List<UUID> uploadIds = uploads.stream().map(ProjectUpload::getId).toList();
         if (!uploadIds.isEmpty()) {
+            scanFindingAnalysisRepository.deleteAllForUploads(uploadIds);
             scanFindingRepository.deleteAllForUploads(uploadIds);
             scanOutcomeRepository.deleteAllForUploads(uploadIds);
             scanRunRepository.deleteAllForUploads(uploadIds);

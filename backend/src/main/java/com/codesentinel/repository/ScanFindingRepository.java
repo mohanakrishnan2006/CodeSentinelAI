@@ -3,9 +3,11 @@ package com.codesentinel.repository;
 import com.codesentinel.model.ScanFinding;
 import com.codesentinel.model.ScanFindingSeverity;
 import com.codesentinel.model.ScannerType;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -40,6 +42,16 @@ public interface ScanFindingRepository extends JpaRepository<ScanFinding, UUID> 
               and finding.scanRun.projectUpload.project.owner.id = :ownerId
             """)
     Optional<ScanFinding> findOneForOwner(
+            @Param("findingId") UUID findingId,
+            @Param("ownerId") UUID ownerId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select finding from ScanFinding finding
+            where finding.id = :findingId
+              and finding.scanRun.projectUpload.project.owner.id = :ownerId
+            """)
+    Optional<ScanFinding> findOneForOwnerForUpdate(
             @Param("findingId") UUID findingId,
             @Param("ownerId") UUID ownerId);
 

@@ -24,6 +24,14 @@ spring:
     open-in-view: false
 
 codesentinel:
+  ai:
+    base-url: ${CODESENTINEL_AI_BASE_URL:http://127.0.0.1:8001}
+    connect-timeout: ${CODESENTINEL_AI_CONNECT_TIMEOUT:2s}
+    read-timeout: ${CODESENTINEL_AI_READ_TIMEOUT:130s}
+    pending-stale-timeout: ${CODESENTINEL_AI_PENDING_STALE_TIMEOUT:6m}
+    ollama-generation-timeout-seconds: ${OLLAMA_GENERATION_TIMEOUT_SECONDS:120}
+    max-attempts: ${CODESENTINEL_AI_MAX_ATTEMPTS:3}
+    model-identifier: ${OLLAMA_MODEL:qwen2.5-coder:3b}
   jwt:
     secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}

@@ -242,6 +242,9 @@ The ER diagram below is the intended broader product model. In the current backe
   - Per-scanner outcomes are persisted in the `scan_outcomes` table. They contain scanner identity, execution status, deduplicated finding count, timestamps, and a controlled failure code; they do not contain raw scanner output or secrets.
   - Validated individual findings are persisted in `scan_findings`. Stored fields are limited to scanner, rule ID, application severity, relative path, optional source coordinates, a generic scanner-specific description, a deterministic fingerprint, and creation time. A unique scan/fingerprint constraint prevents duplicate rows. Raw scanner messages, secret values, matches, source snippets, and raw JSON are not stored, logged, or returned.
   - Findings APIs enforce scan ownership for both listing and detail retrieval. Filtering supports severity, scanner, and exact relative path. Result pages are bounded; returned descriptions are generic and do not contain scanner-provided messages.
+  - `POST /api/v1/findings/{findingId}/analyze` requests or reuses a persisted AI explanation; `GET /api/v1/findings/{findingId}/analysis` returns the owner-scoped analysis status and result. The backend builds the request from normalized persisted fields only, omitting snippets and raw scanner output.
+  - AI analysis rows are unique per finding. A short owner-scoped finding lock reserves processing before the synchronous AI call; no database transaction is held during inference. Recent duplicate requests return `409`, completed results are reused, failed requests have bounded retries, and stale pending claims can be reclaimed.
+  - Configure the private FastAPI service through `CODESENTINEL_AI_BASE_URL`, `CODESENTINEL_AI_CONNECT_TIMEOUT`, and `CODESENTINEL_AI_READ_TIMEOUT`. The read timeout must exceed `OLLAMA_GENERATION_TIMEOUT_SECONDS`. User JWTs are not sent to the AI service or Ollama. Generated fixes remain advisory and are never executed.
   - Trivy database updates are a separate administrative operation. The configured host cache must contain a valid, unexpired database before a scan; otherwise Trivy returns a controlled `DATABASE_UNAVAILABLE` outcome. Set `TRIVY_DATABASE_DIRECTORY` to the trusted cache root when it is not the default `${user.home}/.cache/trivy`. For a manual refresh, use the pinned image with network access only in this maintenance command, never in the scanner container:
     ```powershell
     New-Item -ItemType Directory -Force $env:TRIVY_DATABASE_DIRECTORY
@@ -253,9 +256,9 @@ The ER diagram below is the intended broader product model. In the current backe
   - `GET /projects/{projectId}/versions/{versionId}/report`: Retrieve scan report with calculated security score.
   - Calculate and expose a security score from persisted findings.
 
-### 4.4 AI Explanations & Patch Management (`/api/v1/ai`)
-- `POST /vulnerabilities/{vulnId}/explain`: Generate developer-friendly explanation and root cause via local LLM.
-- `POST /vulnerabilities/{vulnId}/suggest-fix`: Generate code patch and unified diff using RAG context.
+### 4.4 AI Explanations & Patch Management
+- **Implemented finding analysis integration**: the authenticated findings routes above communicate with the separate FastAPI service, which uses configured local Ollama to generate explanations, impact, remediation, and an optional illustrative fix.
+- **Planned**: RAG context, patch generation, and patch application workflows. Generated code is not applied or executed by the analysis integration.
 - `POST /fixes/{fixId}/apply`: Apply fix, creating a new project version (`v2`, `v3`, etc.).
 - `POST /fixes/{fixId}/reject`: Mark fix as rejected.
 - `PUT /fixes/{fixId}/edit`: Save user-customized patch before applying.

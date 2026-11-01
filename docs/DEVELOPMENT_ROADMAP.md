@@ -86,7 +86,7 @@ This document establishes the step-by-step implementation plan for CodeSentinel 
 ---
 
 ### Phase 4: AI Microservice & Local Ollama Integration
-- **Objective**: Provide a separate Python 3.12 FastAPI service for safe, schema-validated static finding explanations using local Ollama.
+- **Objective**: Provide a separate Python 3.12 FastAPI service for safe, schema-validated static finding explanations using local Ollama, integrated with owner-scoped persisted findings in Spring Boot.
 - **Milestone 2.1 — AI Microservice Foundation (implemented)**:
   - Separate `ai-service/` application using FastAPI, Pydantic Settings, Uvicorn, HTTPX, and Pytest.
   - `GET /health` reports the service name and health status.
@@ -99,9 +99,13 @@ This document establishes the step-by-step implementation plan for CodeSentinel 
   - Uses only the configured Ollama URL/model and its structured JSON generation API; response fields are validated before returning.
   - Gitleaks message/metadata/snippet values are never sent to Ollama; common credential patterns are redacted from other inputs and generated fields.
   - Ollama calls have configured generation timeout/token limits, bounded response size, and controlled error responses. Submitted and generated code is never executed.
+- **Milestone 2.3 — Java–Python AI Integration (implemented)**:
+  - Authenticated `POST /api/v1/findings/{findingId}/analyze` and `GET /api/v1/findings/{findingId}/analysis` routes enforce finding ownership.
+  - The backend sends only normalized, persisted finding fields to FastAPI; snippets, raw scanner output, Gitleaks matches, and caller JWTs are omitted.
+  - Results and controlled lifecycle/failure states are persisted once per finding. Duplicate processing is rejected, completed results are reused, retries are bounded, and stale pending claims can be reclaimed.
+  - Service URL and bounded timeouts are environment-configured; integration responses do not disclose upstream bodies or internal service URLs. Fixes are never automatically executed.
 - **Future Phase 4 work**:
-  - Integrate the Spring Boot backend with the AI service and define service-to-service authentication.
-  - RAG, ChromaDB, LangChain, persistence, frontend, and applying generated fixes remain separate future work.
+  - RAG, ChromaDB, LangChain, frontend, and applying generated fixes remain separate future work.
 - **Verification Milestone**:
   - Run the service Pytest suite with Python 3.12.
   - Verify health and Ollama availability plus analysis success, validation, redaction, timeouts, unavailable Ollama, malformed output, and request/response limits using mocked HTTPX responses.

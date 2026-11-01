@@ -74,6 +74,27 @@ public class GlobalExceptionHandler {
         return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(FindingAnalysisNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleFindingAnalysisNotFound(
+            FindingAnalysisNotFoundException ex,
+            HttpServletRequest request) {
+        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(FindingAnalysisConflictException.class)
+    public ResponseEntity<ErrorResponse> handleFindingAnalysisConflict(
+            FindingAnalysisConflictException ex,
+            HttpServletRequest request) {
+        return errorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(AiIntegrationException.class)
+    public ResponseEntity<ErrorResponse> handleAiIntegrationFailure(
+            AiIntegrationException ex,
+            HttpServletRequest request) {
+        return errorResponse(ex.getStatus(), ex.getSafeMessage(), request);
+    }
+
     @ExceptionHandler(UploadNotReadyException.class)
     public ResponseEntity<ErrorResponse> handleUploadNotReady(
             UploadNotReadyException ex,
